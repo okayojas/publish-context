@@ -159,15 +159,16 @@ def main():
             state = {}
     pending = dict(state.get("pending_ids") or {})
 
-    def id_key(src):
+    def id_key(src, claim_index=0):
         ci = src.get("chunk_index")
-        return src["source_path"] if ci is None else f"{src['source_path']}#{ci}"
+        base = src["source_path"] if ci is None else f"{src['source_path']}#{ci}"
+        return base if claim_index == 0 else f"{base}@{claim_index}"
 
-    def stable_id(src):
+    def stable_id(src, claim_index=0):
         """Published id > id reserved by an earlier assemble > mint and reserve."""
-        if src.get("memory_id"):
+        if src.get("memory_id") and claim_index == 0:
             return src["memory_id"]
-        k = id_key(src)
+        k = id_key(src, claim_index)
         if k in pending:
             return pending[k]
         pending[k] = mint_id()
@@ -191,6 +192,8 @@ def main():
         if "authority" in d:
             input_errs.append(f"{w}: set `authority` — that comes from the file's "
                               f"location, never from the classifier")
+        if "claim_index" in d and not (isinstance(d["claim_index"], int) and d["claim_index"] >= 0):
+            input_errs.append(f"{w}: claim_index must be a non-negative integer")
         if d.get("tier") not in (1, 2):
             input_errs.append(f"{w}: tier {d.get('tier')!r} — tier 3 is excluded "
                               f"locally and reported as a count, never classified")
@@ -212,18 +215,31 @@ def main():
             unmatched.append(d.get("content_hash"))
             continue
 
+        # An explicit empty claimed_scope means the classifier looked and found
+        # nothing nameable — a real answer for a globally-applicable rule. Only
+        # fall back to collected hints when the key is absent entirely; `or`
+        # treated [] as "unset" and silently stamped the record with a
+        # low-quality path hint.
+        if "claimed_scope" in d:
+            hints = d["claimed_scope"] or []
+        else:
+            hints = src.get("scope_hints") or []
+
         scope = []
-        for s in d.get("claimed_scope") or src.get("scope_hints") or []:
+        for h in hints:
             scope.append({
-                "text": s.get("text", ""),
-                "guess_kind": s.get("guess_kind", "unknown"),
-                "evidence": s.get("evidence", "body_reference"),
+                "text": h.get("text", ""),
+                "guess_kind": h.get("guess_kind", "unknown"),
+                "evidence": h.get("evidence", "body_reference"),
+                # carried through, not dropped: without it the platform cannot
+                # tell an encoded local path from a real name
+                "quality": h.get("quality", "name"),
                 "resolution": "unresolved",
                 "canonical_id": None,
             })
 
         candidates.append({
-            "memory_id": stable_id(src),
+            "memory_id": stable_id(src, d.get("claim_index", 0)),
             "content_hash": "sha256:" + src["content_hash"],
             "revision": 1,
             # authority comes from the collector, never from the classifier
@@ -251,6 +267,7 @@ def main():
                 "tool": src["tool"],
                 "path": src["source_path"],
                 "documented": src.get("documented_source", True),
+                **({"claim_index": d["claim_index"]} if d.get("claim_index") else {}),
             },
         })
 

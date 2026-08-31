@@ -37,6 +37,69 @@ Facts *about* a colleague that are not evaluative are fine: "Priya owns the auth
 
 ---
 
+## Step 2.5 — Is this a claim, or a container?
+
+Some records are not one claim. They are a **summary** — project status, an
+architecture overview, a digest of several decisions — and they need decomposing
+before Step 3 can apply. The seven kinds all have a normative shape ("do this",
+"don't do that", "this applies to that"); a container has a descriptive one.
+
+The `project` category, where a tool emits one, is nearly always a container.
+
+**A container is a derivable wrapper around a non-derivable kernel.** Take it
+apart along that seam:
+
+> "`weight-config-api` is a FastAPI + MongoDB service that stores and serves
+> weight-engine scoring parameters **so coefficients change without a code
+> deploy**. Reads: any authenticated caller. Writes: `TECH_LEAD` only, audited.
+> Architecture: `app/routers/configs.py`…"
+
+| Fragment | Verdict |
+|---|---|
+| "FastAPI + MongoDB service" | derivable — the code says so |
+| "`app/routers/configs.py`" | derivable — the tree says so |
+| "Writes: `TECH_LEAD` only" | derivable — the decorator says so |
+| **"so coefficients change without a code deploy"** | **keep** — design intent, written nowhere else |
+
+Which yields one claim, not one record:
+
+    constraint — "Weight-engine scoring parameters are served at runtime rather
+    than compiled in, so coefficients can change without a deploy."
+
+### How to emit it
+
+A container produces **zero, one, or several** entries. Give each a
+`claim_index` starting at 0, all carrying the container's `content_hash`:
+
+```json
+{ "content_hash": "<the container's, unchanged>", "claim_index": 0,
+  "kind": "constraint", "tier": 1, "target": "decision",
+  "statement": "…", "rationale": "…" }
+```
+
+They share the container's body and hash — that is the evidence a reviewer
+reads, and it is why several claims can point at one file. Their ids differ.
+
+A container with no kernel yields **nothing**: count it under `excluded` as
+`derivable` and move on. That is the common outcome and it is not a failure.
+
+### The one risk, and how to hold it
+
+Everywhere else you *pick* a statement from the source's own words. Here you
+**author** one, which can drift from what the record actually said. Two rules:
+
+- **Never assert more than the source does.** If the record says "we moved to
+  advisory locks", do not write "advisory locks are required" — that is a
+  stronger claim than the evidence carries.
+- **Prefer the source's own phrasing** for the operative clause, even when it is
+  clumsier than what you would write.
+
+If a fragment is only *arguably* a kernel, drop it. A container that produces
+nothing costs a count; one that produces an overstated claim costs a reviewer's
+trust in every other record.
+
+---
+
 ## Step 3 — Assign the kind
 
 Seven values. Pick the one that fits; if two fit, prefer the higher row.

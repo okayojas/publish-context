@@ -70,6 +70,11 @@ For each survivor decide `kind`, `tier`, `target`, and fill `statement`,
 `rationale`, `pam_component`, `claimed_scope`, `sharing`. Leave `authority`
 alone — it is already set.
 
+Watch for **containers** (rubric Step 2.5): a status or architecture summary is
+not one claim. It yields zero, one, or several, each with a `claim_index`, all
+sharing the container's `content_hash`. Most yield nothing and count as
+`derivable`.
+
 Write your decisions to `~/.arionix/classified.json`:
 
 ```json

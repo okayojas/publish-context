@@ -3,14 +3,20 @@
   "$id": "https://arionix.internal/schemas/memory-publication/0.3",
   "title": "Arionix memory publication envelope",
   "description": "Schema 0.3. Held at 0.x deliberately: the `kind` taxonomy is a hypothesis until measured against a real corpus. Everything else in this contract is settled.",
-
   "type": "object",
-  "required": ["schema_version", "export_id", "store_instance", "exported_at", "generator", "candidates"],
+  "required": [
+    "schema_version",
+    "export_id",
+    "store_instance",
+    "exported_at",
+    "generator",
+    "candidates"
+  ],
   "additionalProperties": false,
-
   "properties": {
-    "schema_version": { "const": "0.3" },
-
+    "schema_version": {
+      "const": "0.3"
+    },
     "envelope_digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
@@ -20,147 +26,362 @@
       "type": "string",
       "description": "Signature over the digest, verified at ingress. We need integrity — did this arrive intact — not authenticity-without-authority, because the ingress already authenticates the person. Absent in report-only mode."
     },
-
-    "export_id":      { "type": "string", "description": "Idempotency key for the whole submission." },
-    "store_instance": { "type": "string", "description": "Stable slug for this machine's memory stores. Two people's stores are two namespaces." },
-    "exported_at":    { "type": "string", "format": "date-time" },
-
+    "export_id": {
+      "type": "string",
+      "description": "Idempotency key for the whole submission."
+    },
+    "store_instance": {
+      "type": "string",
+      "description": "Stable slug for this machine's memory stores. Two people's stores are two namespaces."
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "generator": {
       "type": "object",
-      "required": ["skill", "version"],
+      "required": [
+        "skill",
+        "version"
+      ],
       "additionalProperties": false,
       "description": "Which skill version and model produced the classification, so bad output is attributable to a rubric version and fixable centrally.",
       "properties": {
-        "skill":     { "type": "string" },
-        "version":   { "type": "integer", "minimum": 1 },
-        "model_id":  { "type": "string" },
-        "mode":      { "enum": ["report-only", "publish"] }
+        "skill": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "report-only",
+            "publish"
+          ]
+        }
       }
     },
-
-    "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
-
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
     "retired": {
       "type": "array",
       "description": "Records being withdrawn. The reason distinguishes three lifecycle events that look identical if you only diff exports.",
       "items": {
         "type": "object",
-        "required": ["memory_id", "reason"],
+        "required": [
+          "memory_id",
+          "reason"
+        ],
         "additionalProperties": false,
         "properties": {
-          "memory_id": { "type": "string" },
+          "memory_id": {
+            "type": "string"
+          },
           "reason": {
-            "enum": ["superseded", "wrong", "unshared"],
+            "enum": [
+              "superseded",
+              "wrong",
+              "unshared"
+            ],
             "description": "superseded = the fact changed (close validity, keep history) · wrong = never true (retract) · unshared = a visibility change, not a content change"
           }
         }
       }
     },
-
     "excluded": {
       "type": "array",
       "description": "Counts and reasons only — never content. Visibility into the filter without ingesting what it filtered.",
       "items": {
         "type": "object",
-        "required": ["reason", "count"],
+        "required": [
+          "reason",
+          "count"
+        ],
         "additionalProperties": false,
         "properties": {
-          "reason": { "enum": ["derivable", "session_local", "person_sensitive", "unclassifiable"] },
-          "count":  { "type": "integer", "minimum": 1 },
-          "note":   { "type": "string" }
+          "reason": {
+            "enum": [
+              "derivable",
+              "session_local",
+              "person_sensitive",
+              "unclassifiable"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "note": {
+            "type": "string"
+          }
         }
       }
     }
   },
-
   "$defs": {
     "candidate": {
       "type": "object",
-      "required": ["memory_id", "content_hash", "authority", "kind", "tier", "target",
-                   "statement", "body", "asserted_at", "sharing"],
+      "required": [
+        "memory_id",
+        "content_hash",
+        "authority",
+        "kind",
+        "tier",
+        "target",
+        "statement",
+        "body",
+        "asserted_at",
+        "sharing"
+      ],
       "additionalProperties": false,
-
       "properties": {
-        "memory_id":    { "type": "string", "description": "Minted, stable, written back into the source file on first publication. Filenames and slugs are editable, so neither can be identity." },
-        "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "revision":     { "type": "integer", "minimum": 1 },
-
+        "memory_id": {
+          "type": "string",
+          "description": "Minted, stable, written back into the source file on first publication. Filenames and slugs are editable, so neither can be identity."
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
         "authority": {
-          "enum": ["asserted", "inferred"],
+          "enum": [
+            "asserted",
+            "inferred"
+          ],
           "description": "asserted = a person wrote this file · inferred = a model wrote it by observing. A triage signal, not a gate: both pass review, but the reviewer's default answer differs. NEVER derived from content."
         },
         "authority_signal": {
-          "enum": ["path", "filename", "section", "default"],
+          "enum": [
+            "path",
+            "filename",
+            "section",
+            "default"
+          ],
           "description": "Which of the four rules produced the answer. 'default' means unrecognized source, which always resolves to inferred."
         },
-        "origin": { "enum": ["user_stated", "model_inferred", "derived_from_correction", "unknown"] },
-
-        "tier": { "enum": [1, 2] , "description": "Tier 3 is dropped locally and reported as a count; it never appears here." },
+        "origin": {
+          "enum": [
+            "user_stated",
+            "model_inferred",
+            "derived_from_correction",
+            "unknown"
+          ]
+        },
+        "tier": {
+          "enum": [
+            1,
+            2
+          ],
+          "description": "Tier 3 is dropped locally and reported as a count; it never appears here."
+        },
         "kind": {
-          "enum": ["rejected_alternative", "constraint", "authority", "preference",
-                   "playbook", "vocabulary", "external_reference"],
+          "enum": [
+            "rejected_alternative",
+            "constraint",
+            "authority",
+            "preference",
+            "playbook",
+            "vocabulary",
+            "external_reference"
+          ],
           "description": "The one part of the contract still unfrozen. Sets tier, target and review strictness."
         },
-        "native_type": { "type": ["string", "null"], "description": "The source's own label, verbatim. Preserved so a bad mapping is a config fix rather than a republication." },
+        "native_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The source's own label, verbatim. Preserved so a bad mapping is a config fix rather than a republication."
+        },
         "pam_component": {
-          "enum": ["factual", "procedural", "identity"],
+          "enum": [
+            "factual",
+            "procedural",
+            "identity"
+          ],
           "description": "Procedural records govern how work gets done rather than informing it, so they carry stricter review."
         },
-        "target": { "enum": ["decision", "document", "preference_rule", "alias_proposal", "person_property"] },
-
-        "statement": { "type": "string", "minLength": 1, "description": "The claim, as one normative sentence." },
-        "rationale": { "type": ["string", "null"], "description": "Why. The highest-value field — the part no system of record holds." },
-        "body":      { "type": "string", "minLength": 1, "description": "Original text, unedited. The evidence a reviewer reads." },
-
+        "target": {
+          "enum": [
+            "decision",
+            "document",
+            "preference_rule",
+            "alias_proposal",
+            "person_property"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The claim, as one normative sentence."
+        },
+        "rationale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why. The highest-value field — the part no system of record holds."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Original text, unedited. The evidence a reviewer reads."
+        },
         "claimed_scope": {
           "type": "array",
           "description": "ALWAYS unresolved on submission. The machine has no graph access, so it emits raw strings and the platform resolves them.",
           "items": {
             "type": "object",
-            "required": ["text", "resolution"],
+            "required": [
+              "text",
+              "resolution",
+              "quality"
+            ],
             "additionalProperties": false,
             "properties": {
-              "text":         { "type": "string" },
-              "guess_kind":   { "enum": ["repository", "service", "application", "ticket", "person", "team", "unknown"] },
-              "evidence":     { "type": "string", "description": "e.g. path · git_remote_at_collect_time · body_reference" },
-              "resolution":   { "const": "unresolved" },
-              "canonical_id": { "type": "null" }
+              "text": {
+                "type": "string"
+              },
+              "guess_kind": {
+                "enum": [
+                  "repository",
+                  "service",
+                  "application",
+                  "ticket",
+                  "person",
+                  "team",
+                  "unknown"
+                ]
+              },
+              "evidence": {
+                "type": "string",
+                "description": "e.g. path · git_remote_at_collect_time · body_reference"
+              },
+              "resolution": {
+                "const": "unresolved"
+              },
+              "canonical_id": {
+                "type": "null"
+              },
+              "quality": {
+                "enum": [
+                  "name",
+                  "encoded_path"
+                ],
+                "description": "'encoded_path' is a flattened local filesystem path — readable by a person, never resolvable by the resolver. Carried so the platform can measure real attachment instead of counting every hint."
+              }
             }
           }
         },
-        "refs": { "type": "array", "items": { "type": "string" } },
-
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "activation": {
           "type": "object",
-          "required": ["inclusion"],
+          "required": [
+            "inclusion"
+          ],
           "additionalProperties": false,
           "description": "When the record applies, as data rather than prose. Often already present in the source and previously discarded.",
           "properties": {
-            "inclusion": { "enum": ["always", "fileMatch", "manual"] },
-            "pattern":   { "type": "array", "items": { "type": "string" } },
-            "source":    { "enum": ["frontmatter", "default", "inferred"] }
+            "inclusion": {
+              "enum": [
+                "always",
+                "fileMatch",
+                "manual"
+              ]
+            },
+            "pattern": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source": {
+              "enum": [
+                "frontmatter",
+                "default",
+                "inferred"
+              ]
+            }
           }
         },
-
-        "asserted_at":      { "type": "string", "description": "When the claim became true. Feeds the validity start on any resulting edge." },
-        "updated_at":       { "type": "string" },
-        "timestamp_source": { "enum": ["frontmatter", "mtime"], "description": "The two are not equally trustworthy; record which was used." },
-        "still_true":       { "enum": ["yes", "no", "unknown"] },
-
-        "publisher": { "type": "string", "description": "Verified identity of the publisher. Required so the separation-of-duties constraint has something to evaluate." },
-        "sharing":   { "enum": ["personal", "team", "org"], "description": "This IS the record's access control. Unspecified means personal; widening is always an explicit act." },
-        "subjects":  { "type": "array", "items": { "type": "string" }, "description": "People named in the content. Drives per-person encryption at land time and registration in the erasure index." },
-
+        "asserted_at": {
+          "type": "string",
+          "description": "When the claim became true. Feeds the validity start on any resulting edge."
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "timestamp_source": {
+          "enum": [
+            "frontmatter",
+            "mtime"
+          ],
+          "description": "The two are not equally trustworthy; record which was used."
+        },
+        "still_true": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ]
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Verified identity of the publisher. Required so the separation-of-duties constraint has something to evaluate."
+        },
+        "sharing": {
+          "enum": [
+            "personal",
+            "team",
+            "org"
+          ],
+          "description": "This IS the record's access control. Unspecified means personal; widening is always an explicit act."
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "People named in the content. Drives per-person encryption at land time and registration in the erasure index."
+        },
         "source": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "tool":       { "type": "string" },
-            "path":       { "type": "string" },
-            "documented": { "type": "boolean", "description": "false ⇒ the vendor publishes no format; a parsing gap is attributable to the source." }
+            "tool": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "documented": {
+              "type": "boolean",
+              "description": "false ⇒ the vendor publishes no format; a parsing gap is attributable to the source."
+            },
+            "claim_index": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Present when several claims were extracted from one container record. They share a body and content_hash — the evidence — and have distinct memory_ids."
+            }
           }
         },
-
         "confidence": false,
         "_confidence_note": "Deliberately forbidden. Asserted content is authoritative — running a classifier over text a person wrote and attaching a probability would be theatre. Everything else has confidence recomputed in code from structural signals."
       }
