@@ -142,7 +142,7 @@ def main():
     ap.add_argument("--state", default=str(Path.home() / ".arionix" / "publish-state.json"))
     args = ap.parse_args()
 
-    inter = json.loads(Path(args.candidates).read_text())
+    inter = json.loads(Path(args.candidates).read_text(encoding="utf-8"))
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
 
     # An id minted here must survive a re-run. Without this, assembling twice —
@@ -174,7 +174,7 @@ def main():
         pending[k] = mint_id()
         return pending[k]
 
-    raw = json.loads(Path(args.classified).read_text())
+    raw = json.loads(Path(args.classified).read_text(encoding="utf-8"))
     decisions = raw if isinstance(raw, list) else raw.get("candidates", [])
     excluded = [] if isinstance(raw, list) else raw.get("excluded", [])
     retired = [] if isinstance(raw, list) else raw.get("retired", [])

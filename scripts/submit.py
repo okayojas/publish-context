@@ -34,14 +34,16 @@ def write_back_id(path, memory_id):
     frontmatter keep their id in the state file instead.
     """
     try:
-        text = path.read_text()
+        with path.open(encoding="utf-8", newline="") as fh:
+            text = fh.read()
     except Exception as e:
         return False, f"unreadable: {e}"
 
     if not text.startswith("---"):
         return False, "no frontmatter — id kept in state only"
 
-    lines = text.split("\n")
+    eol = "\r\n" if "\r\n" in text else "\n"
+    lines = text.replace("\r\n", "\n").split("\n")
     end = None
     for i in range(1, len(lines)):
         if lines[i].strip() in ("---", "..."):
@@ -56,7 +58,8 @@ def write_back_id(path, memory_id):
 
     lines.insert(end, f"arionix_id: {memory_id}")
     try:
-        path.write_text("\n".join(lines))
+        with path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(eol.join(lines))
         return True, "written"
     except Exception as e:
         return False, f"write failed: {e}"
@@ -81,8 +84,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    payload = json.loads(Path(args.payload).read_text())
-    inter = json.loads(Path(args.candidates).read_text())
+    payload = json.loads(Path(args.payload).read_text(encoding="utf-8"))
+    inter = json.loads(Path(args.candidates).read_text(encoding="utf-8"))
     by_hash = {"sha256:" + c["content_hash"]: c for c in inter["candidates"]}
 
     n = len(payload.get("candidates", []))
@@ -120,7 +123,7 @@ def main():
     state = {}
     if state_path.is_file():
         try:
-            state = json.loads(state_path.read_text())
+            state = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
             state = {}
     state.setdefault("files", {})

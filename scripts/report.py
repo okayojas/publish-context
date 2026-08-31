@@ -48,7 +48,7 @@ def main():
               f"    python3 {Path(__file__).parent / 'collect.py'} --all\n", file=sys.stderr)
         return 1
 
-    d = json.loads(cpath.read_text())
+    d = json.loads(cpath.read_text(encoding="utf-8"))
     cands = d["candidates"]
     total = len(cands)
 
@@ -142,7 +142,7 @@ def main():
 
     # ---- 8. kind distribution + exclusion mix (only with a classification pass)
     if args.classified and Path(args.classified).is_file():
-        raw = json.loads(Path(args.classified).read_text())
+        raw = json.loads(Path(args.classified).read_text(encoding="utf-8"))
         kept = raw if isinstance(raw, list) else raw.get("candidates", [])
         excl = [] if isinstance(raw, list) else raw.get("excluded", [])
 

@@ -499,14 +499,14 @@ def main():
                     help="resolve and list what would be read; open nothing")
     args = ap.parse_args()
 
-    manifest = json.loads((REF / "manifest.json").read_text())
-    aliases = json.loads((REF / "alias-table.json").read_text())
+    manifest = json.loads((REF / "manifest.json").read_text(encoding="utf-8"))
+    aliases = json.loads((REF / "alias-table.json").read_text(encoding="utf-8"))
 
     state_path = Path(args.state)
     state = {}
     if state_path.is_file() and not args.all:
         try:
-            state = json.loads(state_path.read_text())
+            state = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
             state = {}
 
