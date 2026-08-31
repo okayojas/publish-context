@@ -282,6 +282,44 @@ def git_remote_hint(start):
 
 # ---------------------------------------------------------------------- parse
 
+def _jsonable(v):
+    """PyYAML resolves YAML timestamps to real date/datetime objects, while the
+    fallback parser returns strings — so whether frontmatter is JSON-serializable
+    depended on whether PyYAML happened to be installed. Normalize at the
+    boundary rather than hoping."""
+    import datetime as _dt
+    if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+        return v.isoformat()
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return v
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _jsonable(x) for k, x in v.items()}
+    return str(v)
+
+
+def _norm_ts(v):
+    """Canonicalize a timestamp string so the two parsers agree. PyYAML yields
+    `...+00:00` and the fallback yields the source's `...Z` — the same instant,
+    two strings. `asserted_at` feeds the validity start downstream, so two
+    machines publishing one memory must not disagree about it. Unparseable
+    values pass through untouched rather than being lost."""
+    if not isinstance(v, str) or not v.strip():
+        return v
+    from datetime import datetime, timezone
+    txt = v.strip()
+    for cand in (txt.replace("Z", "+00:00") if txt.endswith("Z") else txt, txt):
+        try:
+            dt = datetime.fromisoformat(cand)
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    return v
+
+
 def _flatten(d, prefix=""):
     """Some tools nest (Claude Code puts `type` under `metadata:`), so match on
     both the dotted path and the leaf name."""
@@ -310,7 +348,7 @@ def map_frontmatter(fm, aliases):
         if field is None:
             unknown.append(k)
         elif field != "ignore":
-            out[field] = v
+            out[field] = _jsonable(v)
 
     activation = {}
     pat = out.get("activation_pattern")
@@ -368,7 +406,9 @@ def parse_file(path, tool, root, aliases, state):
     else:
         chunks = [(body, base_auth)]
 
-    ts, ts_src = mapped.get("timestamp"), "frontmatter"
+    ts, ts_src = _norm_ts(_jsonable(mapped.get("timestamp"))), "frontmatter"
+    if isinstance(ts, str) and not ts.strip():
+        ts = None
     if not ts:
         ts = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
         ts_src = "mtime"
@@ -531,7 +571,7 @@ def main():
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2))
+    out.write_text(json.dumps(result, indent=2, default=str))
 
     ok = sum(1 for s in sources if s["status"] in ("ok", "partial"))
     print(f"sources: {ok} present, {sum(1 for s in sources if s['status']=='absent')} absent, "

@@ -15,6 +15,7 @@ any rubric has been applied.
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -40,7 +41,14 @@ def main():
                     help="also print N full records as structured JSON")
     args = ap.parse_args()
 
-    d = json.loads(Path(args.candidates).read_text())
+    cpath = Path(args.candidates)
+    if not cpath.is_file():
+        print(f"\nNo candidates file at {cpath}\n\n"
+              f"Run the collector first:\n"
+              f"    python3 {Path(__file__).parent / 'collect.py'} --all\n", file=sys.stderr)
+        return 1
+
+    d = json.loads(cpath.read_text())
     cands = d["candidates"]
     total = len(cands)
 
