@@ -18,7 +18,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -144,7 +143,7 @@ def resolve_root(tool):
             if not sf.is_file():
                 continue
             try:
-                cfg = json.loads(sf.read_text())
+                cfg = json.loads(sf.read_text(encoding="utf-8"))
             except Exception:
                 continue
             val = dotted(cfg, s["key"])
@@ -168,7 +167,7 @@ def settings_filenames(tool, root):
         if not sf.is_file():
             continue
         try:
-            val = dotted(json.loads(sf.read_text()), s["key"])
+            val = dotted(json.loads(sf.read_text(encoding="utf-8")), s["key"])
         except Exception:
             continue
         if isinstance(val, str):
@@ -183,7 +182,8 @@ def authorship_for(tool, rel_path):
     """Four rules total, drawn from the manifest. Anything unrecognized defaults
     to 'inferred' — fail toward doubt. Never inferred from content."""
     rule = tool.get("authorship", "path")
-    name = Path(rel_path).name
+    rel_path = _posix(rel_path)
+    name = rel_path.rsplit("/", 1)[-1]
 
     if rule == "filename":
         human = tool.get("human_filenames", [])
@@ -228,8 +228,15 @@ def _glob_to_re(pattern):
     return rx
 
 
+def _posix(rel):
+    """Manifest globs are written POSIX-style. On Windows a relative path comes
+    back with backslashes, so every match silently failed and authorship fell
+    through to the fail-safe default. Normalize before comparing."""
+    return str(rel).replace("\\", "/")
+
+
 def _glob_match(rel, pattern):
-    return _glob_to_re(pattern).match(rel) is not None
+    return _glob_to_re(pattern).match(_posix(rel)) is not None
 
 # ---------------------------------------------------------------- content bits
 
@@ -267,18 +274,11 @@ def detect_subjects(text):
     return sorted(set(MENTION.findall(text)) | set(EMAIL.findall(text)))
 
 
-def git_remote_hint(start):
-    try:
-        r = subprocess.run(["git", "-C", str(start), "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=3)
-        if r.returncode == 0:
-            url = r.stdout.strip()
-            m = re.search(r"[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", url)
-            if m:
-                return m.group(1)
-    except Exception:
-        pass
-    return None
+# The cwd git remote was briefly used as a scope hint. Removed: it reported the
+# repository the collector was *invoked from*, not the one a memory is about, so
+# running it inside any checkout stamped every record with that repo. Scope comes
+# from the store's own path (`scope_from_path`) or from references in the text.
+# A confidently wrong scope is worse than an absent one.
 
 # ---------------------------------------------------------------------- parse
 
@@ -389,8 +389,8 @@ def split_sections(body, heading):
 
 
 def parse_file(path, tool, root, aliases, state):
-    rel = str(path.relative_to(root))
-    raw = path.read_text(errors="replace")
+    rel = _posix(path.relative_to(root))
+    raw = path.read_text(encoding="utf-8", errors="replace")
     src_hash = hashlib.sha256(raw.encode()).hexdigest()
 
     prior = state.get("files", {}).get(str(path))
@@ -458,7 +458,7 @@ def enumerate_files(root, patterns, excludes):
         for p in sorted(root.glob(pat)):
             if not p.is_file():
                 continue
-            rel = str(p.relative_to(root))
+            rel = _posix(p.relative_to(root))
             if any(_glob_match(rel, e) for e in excludes):
                 continue
             if p not in seen:
@@ -487,7 +487,6 @@ def main():
             state = {}
 
     sources, candidates, set_aside = [], [], []
-    cwd_repo = git_remote_hint(Path.cwd())
 
     for tool in manifest["tools"]:
         root, how = resolve_root(tool)
@@ -506,7 +505,7 @@ def main():
                 "resolved_root": str(root), "resolution": how,
                 "documented": tool.get("documented", True),
                 "counts": {"found": len(files), "changed": 0, "unchanged": 0},
-                "would_read": [str(f.relative_to(root)) for f in files],
+                "would_read": [_posix(f.relative_to(root)) for f in files],
                 "errors": [],
             })
             continue
@@ -524,8 +523,6 @@ def main():
                 continue
             changed += 1
             for r in recs or []:
-                if cwd_repo and not r["scope_hints"]:
-                    r["scope_hints"] = [{"text": cwd_repo, "evidence": "git_remote_at_collect_time"}]
                 candidates.append(r)
 
         for pg in tool.get("patch_globs", []):

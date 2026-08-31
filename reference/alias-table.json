@@ -1,50 +1,90 @@
 {
   "alias_table_version": 1,
-  "_comment": "Frontmatter key aliases. Across every surveyed tool, instruction files are markdown with optional YAML frontmatter — the parser is generic and only the key NAMES differ. Ten spellings, four meanings. A new spelling is a new row here, never a new parser.",
-
+  "_comment": "Frontmatter key aliases. Across every surveyed tool, instruction files are markdown with optional YAML frontmatter \u2014 the parser is generic and only the key NAMES differ. Ten spellings, four meanings. A new spelling is a new row here, never a new parser.",
   "activation_pattern": {
     "_meaning": "Load this file only when the agent touches files matching these globs.",
-    "keys": ["paths", "globs", "applyTo", "fileMatchPattern", "trigger", "apply_to", "files"],
+    "keys": [
+      "paths",
+      "globs",
+      "applyTo",
+      "fileMatchPattern",
+      "trigger",
+      "apply_to",
+      "files"
+    ],
     "value_shape": "string | string[]"
   },
-
   "activation_inclusion": {
     "_meaning": "Load unconditionally, regardless of what files are in play.",
-    "keys": ["alwaysApply", "inclusion", "always", "alwaysInclude"],
+    "keys": [
+      "alwaysApply",
+      "inclusion",
+      "always",
+      "alwaysInclude"
+    ],
     "value_shape": "boolean | 'always' | 'fileMatch' | 'manual'",
-    "truthy": [true, "true", "always"],
+    "truthy": [
+      true,
+      "true",
+      "always"
+    ],
     "_default_note": "Absence of an activation_pattern key implies 'always' for most tools. Record which of the two produced the answer."
   },
-
   "statement": {
     "_meaning": "A one-line summary the tool uses to decide relevance. Our best candidate for the claim sentence.",
-    "keys": ["description", "summary", "title"],
+    "keys": [
+      "description",
+      "summary",
+      "title"
+    ],
     "value_shape": "string"
   },
-
   "native_type": {
     "_meaning": "The source's own category label, kept verbatim. Only one tool emits this today.",
-    "keys": ["type", "category", "kind"],
+    "keys": [
+      "type",
+      "node_type",
+      "category",
+      "kind"
+    ],
     "value_shape": "string",
-    "_verbatim_note": "Never normalize this into our taxonomy in place. It is preserved so a bad mapping is a config fix rather than a republication."
+    "_verbatim_note": "Never normalize this into our taxonomy in place. It is preserved so a bad mapping is a config fix rather than a republication.",
+    "_observed": "metadata.node_type appears in Claude Code auto-memory alongside metadata.type; treated as a type label pending confirmation."
   },
-
   "timestamp": {
     "_meaning": "When the tool last wrote the record. More trustworthy than filesystem mtime.",
-    "keys": ["modified", "updated", "updated_at", "lastModified"],
+    "keys": [
+      "modified",
+      "updated",
+      "updated_at",
+      "lastModified"
+    ],
     "value_shape": "ISO-8601 string"
   },
-
   "identity": {
     "_meaning": "Our minted record id, written back into the source on first publication so a rename does not fork the record.",
-    "keys": ["arionix_id"],
+    "keys": [
+      "arionix_id"
+    ],
     "value_shape": "string"
   },
-
   "ignore": {
-    "_meaning": "Keys we read and deliberately drop — tool bookkeeping with no bearing on the claim.",
-    "keys": ["root", "targets", "name", "localRoot", "excludeAgent", "extends", "facet", "systemPrompt", "contextFile", "subprojectPath"]
+    "_meaning": "Keys we read and deliberately drop \u2014 tool bookkeeping with no bearing on the claim.",
+    "keys": [
+      "contextFile",
+      "excludeAgent",
+      "extends",
+      "facet",
+      "localRoot",
+      "name",
+      "originSessionId",
+      "root",
+      "sessionId",
+      "subprojectPath",
+      "systemPrompt",
+      "targets"
+    ],
+    "_observed": "metadata.originSessionId is per-session bookkeeping with no bearing on the claim."
   },
-
-  "_unknown_keys": "Anything not listed above is recorded per-file in `unknown_frontmatter_keys` and surfaced in the report. That list is the alias table's own backlog — a recurring unknown key is a missing row, and the model can propose the row."
+  "_unknown_keys": "Anything not listed above is recorded per-file in `unknown_frontmatter_keys` and surfaced in the report. That list is the alias table's own backlog \u2014 a recurring unknown key is a missing row, and the model can propose the row."
 }
