@@ -47,7 +47,12 @@ the tool relocates its root — the resolution step is reported per source.
 
 ```bash
 python3 scripts/report.py
+python3 scripts/report.py --sample 3    # also print 3 full records as JSON
 ```
+
+`--sample N` prints the structured records verbatim, which is what to reach for
+when someone asks what the output actually looks like rather than how much of it
+there is.
 
 Show the user. If they only asked for a report, **stop here.** Mention that
 publishing is available but don't do it uninvited.

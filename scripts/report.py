@@ -36,6 +36,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidates", default=str(Path.home() / ".arionix" / "candidates.json"))
     ap.add_argument("--classified", default=None)
+    ap.add_argument("--sample", type=int, default=0, metavar="N",
+                    help="also print N full records as structured JSON")
     args = ap.parse_args()
 
     d = json.loads(Path(args.candidates).read_text())
@@ -138,6 +140,18 @@ def main():
             if pct >= 70:
                 print("  \033[33mMostly content the graph already holds — worth knowing "
                       "before building further.\033[0m")
+
+    if args.sample:
+        rule(f"Structured output — first {min(args.sample, total)} record(s)")
+        print("  \033[2mthis is what collect.py writes to candidates.json\033[0m\n")
+        for c in cands[:args.sample]:
+            body = c.get("body") or ""
+            shown = dict(c)
+            if len(body) > 300:
+                shown["body"] = body[:300] + f"… [{len(body)} chars total]"
+            for line in json.dumps(shown, indent=2).splitlines():
+                print("  " + line)
+            print()
 
     if d.get("set_aside"):
         rule("Set aside")

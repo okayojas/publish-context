@@ -233,8 +233,13 @@ def _glob_match(rel, pattern):
 
 # ---------------------------------------------------------------- content bits
 
-WHY = re.compile(r"^\s*\*\*(?:Why|Rationale|Reason)[:\*]*\*?\*?:?\s*(.+)$",
-                 re.IGNORECASE | re.MULTILINE)
+# Rationales wrap across lines. Capture to the next blank line, the next bold
+# marker, or end of text — `(.+)$` stopped at the first newline and truncated
+# the single most valuable field mid-sentence.
+WHY = re.compile(
+    r"^[ \t]*\*\*(?:Why|Rationale|Reason)\b[^:*]*:?\*\*:?[ \t]*(.+?)"
+    r"(?=\n[ \t]*\n|\n[ \t]*\*\*|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL)
 TICKET = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 URL = re.compile(r"https?://[^\s)>\]]+")
 PATHY = re.compile(r"(?<![\w/])((?:src|lib|app|tests?|packages?)/[\w./*-]+)")
@@ -244,7 +249,9 @@ EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")
 
 def extract_rationale(body):
     m = WHY.search(body)
-    return m.group(1).strip() if m else None
+    if not m:
+        return None
+    return re.sub(r"\s+", " ", m.group(1)).strip() or None
 
 
 def extract_refs(text):
