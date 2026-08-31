@@ -299,6 +299,16 @@ def _jsonable(v):
     return str(v)
 
 
+def _looks_encoded(text):
+    """True for a project-dir name that is really a flattened filesystem path."""
+    if len(text) > 48 and text.count("-") >= 4:
+        return True
+    low = text.lower()
+    return (low.startswith(("c--", "d--", "-users-", "-home-"))
+            or "-users-" in low or "-home-" in low or "-documents-" in low
+            or "-downloads-" in low or "-desktop-" in low)
+
+
 def _norm_ts(v):
     """Canonicalize a timestamp string so the two parsers agree. PyYAML yields
     `...+00:00` and the fallback yields the source's `...Z` — the same instant,
@@ -419,7 +429,17 @@ def parse_file(path, tool, root, aliases, state):
     if sp:
         m = re.search(sp, rel)
         if m and m.groupdict().get("scope"):
-            scope_hints.append({"text": m.group("scope"), "evidence": "path"})
+            raw = m.group("scope")
+            scope_hints.append({
+                "text": raw,
+                "evidence": "path",
+                # Graded, because some tools encode a whole filesystem path into
+                # the directory name. That is readable by a person and useless to
+                # a resolver, and counting it as attachment inflates the metric.
+                # It cannot be decoded either: separators and real hyphens are the
+                # same character, so the segmentation is genuinely ambiguous.
+                "quality": "encoded_path" if _looks_encoded(raw) else "name",
+            })
 
     out = []
     for i, (chunk, auth) in enumerate(chunks):

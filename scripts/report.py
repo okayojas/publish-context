@@ -106,9 +106,24 @@ def main():
 
     # ---- 5. scope-reference density (the attachment ceiling)
     rule("Attachment ceiling")
-    withref = sum(1 for c in cands if c.get("refs") or c.get("scope_hints"))
+
+    def usable(c):
+        if c.get("refs"):
+            return True
+        return any(h.get("quality", "name") == "name" for h in c.get("scope_hints") or [])
+
+    withref = sum(1 for c in cands if usable(c))
+    encoded = sum(1 for c in cands
+                  if not usable(c)
+                  and any(h.get("quality") == "encoded_path"
+                          for h in c.get("scope_hints") or []))
     print(f"  {withref}/{total} name something resolvable  {bar(withref, total)}")
-    print(f"  \033[2m{total - withref} would land as floating sentences\033[0m")
+    if encoded:
+        print(f"  \033[33m{encoded} carry only an encoded local path — readable by a "
+              f"person, not by the resolver\033[0m")
+    floating = total - withref - encoded
+    if floating:
+        print(f"  \033[2m{floating} would land as floating sentences\033[0m")
 
     # ---- 6. timestamp provenance
     rule("Timestamps")
