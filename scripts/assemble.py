@@ -139,10 +139,39 @@ def main():
     ap.add_argument("--publisher", default=os.environ.get("ARIONIX_PRINCIPAL", ""))
     ap.add_argument("--mode", choices=["report-only", "publish"], default="publish")
     ap.add_argument("--model-id", default=os.environ.get("ARIONIX_MODEL_ID", ""))
+    ap.add_argument("--state", default=str(Path.home() / ".arionix" / "publish-state.json"))
     args = ap.parse_args()
 
     inter = json.loads(Path(args.candidates).read_text())
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
+
+    # An id minted here must survive a re-run. Without this, assembling twice —
+    # which happens whenever a classification is revised, or a submission fails
+    # after the records already landed — produced a different id for the same
+    # record. Downstream dedup keys on it, so the record would land twice as two
+    # objects instead of deduping to one.
+    state_path = Path(args.state)
+    state = {}
+    if state_path.is_file():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            state = {}
+    pending = dict(state.get("pending_ids") or {})
+
+    def id_key(src):
+        ci = src.get("chunk_index")
+        return src["source_path"] if ci is None else f"{src['source_path']}#{ci}"
+
+    def stable_id(src):
+        """Published id > id reserved by an earlier assemble > mint and reserve."""
+        if src.get("memory_id"):
+            return src["memory_id"]
+        k = id_key(src)
+        if k in pending:
+            return pending[k]
+        pending[k] = mint_id()
+        return pending[k]
 
     raw = json.loads(Path(args.classified).read_text())
     decisions = raw if isinstance(raw, list) else raw.get("candidates", [])
@@ -194,7 +223,7 @@ def main():
             })
 
         candidates.append({
-            "memory_id": src.get("memory_id") or mint_id(),
+            "memory_id": stable_id(src),
             "content_hash": "sha256:" + src["content_hash"],
             "revision": 1,
             # authority comes from the collector, never from the classifier
@@ -258,6 +287,12 @@ def main():
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2))
+
+    # Reserve the ids so a re-assemble reuses them. submit.py promotes these to
+    # `files` on a successful submission and clears the reservation.
+    state["pending_ids"] = pending
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2))
 
     kinds = {}
     for c in candidates:

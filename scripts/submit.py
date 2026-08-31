@@ -142,6 +142,11 @@ def main():
         elif why != "already present":
             skipped.append((p.name, why))
 
+    # Reservations are now published — drop them so state has one home for ids.
+    pending = state.get("pending_ids") or {}
+    published = {c["memory_id"] for c in payload["candidates"]}
+    state["pending_ids"] = {k: v for k, v in pending.items() if v not in published}
+
     state["last_export_id"] = payload["export_id"]
     state["last_exported_at"] = payload["exported_at"]
     state_path.parent.mkdir(parents=True, exist_ok=True)

@@ -394,6 +394,7 @@ def parse_file(path, tool, root, aliases, state):
     src_hash = hashlib.sha256(raw.encode()).hexdigest()
 
     prior = state.get("files", {}).get(str(path))
+    reserved = state.get("pending_ids") or {}
     if prior and prior.get("source_hash") == src_hash:
         return None, "unchanged"
 
@@ -425,7 +426,10 @@ def parse_file(path, tool, root, aliases, state):
         if not chunk.strip():
             continue
         out.append({
-            "memory_id": mapped.get("identity") or prior and prior.get("memory_id") or None,
+            "memory_id": (mapped.get("identity")
+                          or (prior or {}).get("memory_id")
+                          or reserved.get(str(path) if i == 0 and len(chunks) == 1
+                                          else f"{path}#{i}")),
             "tool": tool["tool"],
             "source_path": str(path),
             "source_rel": rel,
