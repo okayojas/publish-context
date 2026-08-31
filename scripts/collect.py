@@ -592,7 +592,8 @@ def main():
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2, default=str))
+    out.write_text(json.dumps(result, indent=2, default=str, ensure_ascii=False),
+                   encoding="utf-8")
 
     ok = sum(1 for s in sources if s["status"] in ("ok", "partial"))
     print(f"sources: {ok} present, {sum(1 for s in sources if s['status']=='absent')} absent, "

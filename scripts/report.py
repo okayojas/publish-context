@@ -166,13 +166,14 @@ def main():
 
     if args.sample:
         rule(f"Structured output — first {min(args.sample, total)} record(s)")
-        print("  \033[2mthis is what collect.py writes to candidates.json\033[0m\n")
+        print("  \033[2mthis is what collect.py writes to candidates.json\033[0m")
+        print("  \033[2mmemory_id is null until a record is assembled for publication\033[0m\n")
         for c in cands[:args.sample]:
             body = c.get("body") or ""
             shown = dict(c)
             if len(body) > 300:
                 shown["body"] = body[:300] + f"… [{len(body)} chars total]"
-            for line in json.dumps(shown, indent=2).splitlines():
+            for line in json.dumps(shown, indent=2, ensure_ascii=False).splitlines():
                 print("  " + line)
             print()
 

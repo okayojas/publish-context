@@ -150,7 +150,7 @@ def main():
     state["last_export_id"] = payload["export_id"]
     state["last_exported_at"] = payload["exported_at"]
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(state, indent=2))
+    state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(f"state updated · {len(payload['candidates'])} file(s) recorded")
     print(f"ids written back into {wrote} source file(s)")
