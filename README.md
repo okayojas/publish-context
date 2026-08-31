@@ -44,6 +44,7 @@ two data files:
 | Script | Stage |
 |---|---|
 | `scripts/collect.py` | Resolve → enumerate → diff → parse → tag |
+| `scripts/resolve-projects.py` | Match encoded project paths to real repos, by re-encoding |
 | `scripts/report.py` | Report-only rendering |
 | `scripts/assemble.py` | Envelope, digest, validation |
 | `scripts/submit.py` | Submit, then state and id write-back |

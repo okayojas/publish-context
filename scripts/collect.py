@@ -22,6 +22,21 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+def _utf8_console():
+    """A stock Windows console encodes stdout as cp1252, which cannot represent
+    the box-drawing and separator characters this prints — so output died with an
+    encode error while file I/O was already fine. Rebind the streams; fall back
+    to plain ASCII markers if even that is unavailable."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")          # 3.7+
+        except Exception:
+            pass
+
+
+_utf8_console()
+
+
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 
@@ -398,7 +413,7 @@ def split_sections(body, heading):
     return parts
 
 
-def parse_file(path, tool, root, aliases, state):
+def parse_file(path, tool, root, aliases, state, project_map=None):
     rel = _posix(path.relative_to(root))
     raw = path.read_text(encoding="utf-8", errors="replace")
     src_hash = hashlib.sha256(raw.encode()).hexdigest()
@@ -430,16 +445,29 @@ def parse_file(path, tool, root, aliases, state):
         m = re.search(sp, rel)
         if m and m.groupdict().get("scope"):
             raw = m.group("scope")
-            scope_hints.append({
-                "text": raw,
-                "evidence": "path",
+            # A verified project map (scripts/resolve-projects.py) upgrades an
+            # encoded path to a real repository name. Verified by re-encoding a
+            # candidate directory and comparing, never by decoding the hint.
+            mapped_name = (project_map or {}).get(raw)
+            if mapped_name:
+                scope_hints.append({
+                    "text": mapped_name,
+                    "evidence": "project_map",
+                    "quality": "name",
+                    "encoded_from": raw,
+                })
+                sp = None
+            else:
+                scope_hints.append({
+                    "text": raw,
+                    "evidence": "path",
                 # Graded, because some tools encode a whole filesystem path into
                 # the directory name. That is readable by a person and useless to
                 # a resolver, and counting it as attachment inflates the metric.
                 # It cannot be decoded either: separators and real hyphens are the
                 # same character, so the segmentation is genuinely ambiguous.
-                "quality": "encoded_path" if _looks_encoded(raw) else "name",
-            })
+                    "quality": "encoded_path" if _looks_encoded(raw) else "name",
+                })
 
     out = []
     for i, (chunk, auth) in enumerate(chunks):
@@ -495,12 +523,22 @@ def main():
     ap.add_argument("--state", default=str(Path.home() / ".arionix" / "publish-state.json"))
     ap.add_argument("--out", default=str(Path.home() / ".arionix" / "candidates.json"))
     ap.add_argument("--all", action="store_true", help="ignore state, re-read everything")
+    ap.add_argument("--project-map",
+                    default=str(Path.home() / ".arionix" / "project-map.json"))
     ap.add_argument("--dry-run", action="store_true",
                     help="resolve and list what would be read; open nothing")
     args = ap.parse_args()
 
     manifest = json.loads((REF / "manifest.json").read_text(encoding="utf-8"))
     aliases = json.loads((REF / "alias-table.json").read_text(encoding="utf-8"))
+
+    project_map = {}
+    pm = Path(args.project_map)
+    if pm.is_file():
+        try:
+            project_map = json.loads(pm.read_text(encoding="utf-8"))
+        except Exception:
+            project_map = {}
 
     state_path = Path(args.state)
     state = {}
@@ -538,7 +576,7 @@ def main():
         errors = []
         for f in files:
             try:
-                recs, status = parse_file(f, tool, root, aliases, state)
+                recs, status = parse_file(f, tool, root, aliases, state, project_map)
             except Exception as e:
                 errors.append({"path": str(f), "error": f"{type(e).__name__}: {e}"})
                 continue

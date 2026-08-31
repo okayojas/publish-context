@@ -57,6 +57,26 @@ there is.
 Show the user. If they only asked for a report, **stop here.** Mention that
 publishing is available but don't do it uninvited.
 
+## Step 2.5 — Resolve encoded project paths (only if the report flags them)
+
+If the attachment ceiling shows records carrying *only an encoded local path*,
+those are unpublishable as-is — the resolver can't use them and the skill won't
+invent an id.
+
+```bash
+python3 scripts/resolve-projects.py
+```
+
+It matches by **re-encoding** candidate checkouts and comparing, then reads each
+match's git remote. That is verification, not decoding — the encoded name can't
+be decoded, because separators and real hyphens are the same character.
+
+Matches are written to `~/.arionix/project-map.json` and picked up by every later
+`collect.py` run, which upgrades those hints to real names. Anything unmatched is
+printed as a stub for the person to complete by hand — one line each, once.
+
+Re-run `collect.py` afterwards so the upgraded hints land in the candidates.
+
 ## Step 3 — Classify
 
 Only when publishing. Read `reference/tier-rubric.md`, then work through

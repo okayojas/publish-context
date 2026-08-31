@@ -20,15 +20,45 @@ from collections import Counter
 from pathlib import Path
 
 
+def _utf8_console():
+    """A stock Windows console encodes stdout as cp1252, which cannot represent
+    the box-drawing and separator characters this prints — so output died with an
+    encode error while file I/O was already fine. Rebind the streams; fall back
+    to plain ASCII markers if even that is unavailable."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")          # 3.7+
+        except Exception:
+            pass
+
+
+_utf8_console()
+
+
+def _safe(*chars):
+    """Return the first glyph the console can actually encode."""
+    enc = (getattr(sys.stdout, "encoding", None) or "ascii")
+    for c in chars:
+        try:
+            c.encode(enc)
+            return c
+        except Exception:
+            continue
+    return chars[-1]
+
+
+FULL, EMPTY, DASH = _safe("█", "#"), _safe("·", "."), _safe("─", "-")
+
+
 def bar(n, total, width=22):
     if not total:
         return ""
     filled = round(width * n / total)
-    return "█" * filled + "·" * (width - filled)
+    return FULL * filled + EMPTY * (width - filled)
 
 
 def rule(title=""):
-    print(f"\n\033[2m{'─' * 68}\033[0m")
+    print(f"\n\033[2m{DASH * 68}\033[0m")
     if title:
         print(f"\033[1m{title}\033[0m")
 
@@ -59,7 +89,8 @@ def main():
     rule("Stores")
     for s in d["sources"]:
         st = s["status"]
-        mark = {"ok": "●", "partial": "◐", "absent": "○", "unsupported": "×"}.get(st, "?")
+        mark = {"ok": _safe("●", "*"), "partial": _safe("◐", "~"),
+                "absent": _safe("○", "-"), "unsupported": _safe("×", "x")}.get(st, "?")
         line = f"  {mark} {s.get('display', s['tool']):<26}"
         if st in ("ok", "partial"):
             c = s["counts"]
