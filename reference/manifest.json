@@ -1,0 +1,137 @@
+{
+  "manifest_version": 1,
+  "_comment": "Location knowledge, one entry per tool. This is DATA — a new tool is a new entry, not a code change. Resolution order per tool: env_root, then settings key, then default_roots (first hit wins). 'documented: false' means the vendor publishes no format and the reader is best-effort; parsing gaps are attributable to the source, not to missing data.",
+
+  "tools": [
+    {
+      "tool": "claude-code",
+      "display": "Claude Code",
+      "env_root": ["CLAUDE_CONFIG_DIR"],
+      "default_roots": ["~/.claude"],
+      "settings": [
+        { "file": "settings.json", "key": "autoMemoryDirectory", "applies_to": "agent" }
+      ],
+      "globs": {
+        "human": ["CLAUDE.md", "rules/**/*.md"],
+        "agent": ["projects/*/memory/**/*.md", "agent-memory/*/**/*.md"]
+      },
+      "exclude": ["projects/*/memory/MEMORY.md"],
+      "_exclude_note": "MEMORY.md is an index of the topic files, not a memory itself. Reading it would duplicate every record.",
+      "authorship": "path",
+      "scope_from_path": "projects/(?P<scope>[^/]+)/memory/",
+      "timestamp_key": "modified",
+      "documented": true
+    },
+    {
+      "tool": "gemini-cli",
+      "display": "Gemini CLI",
+      "env_root": ["GEMINI_CONFIG_DIR"],
+      "default_roots": ["~/.gemini"],
+      "settings": [
+        { "file": "settings.json", "key": "context.fileName", "applies_to": "human_filenames" }
+      ],
+      "globs": {
+        "human": ["GEMINI.md", "AGENTS.md", "CONTEXT.md"],
+        "agent": []
+      },
+      "authorship": "section",
+      "section_heading": "## Gemini Added Memories",
+      "_section_note": "save_memory appends agent-written facts under this heading INSIDE the same file a person hand-writes. Split the file at the heading; never tag it whole.",
+      "patch_globs": ["tmp/*/memory/**/*.patch"],
+      "_patch_note": "Experimental auto-memory writes review candidates as unified diffs awaiting human approval. Read and set aside — an unreviewed candidate is not a memory.",
+      "documented": true
+    },
+    {
+      "tool": "codex-cli",
+      "display": "OpenAI Codex CLI",
+      "env_root": ["CODEX_HOME"],
+      "default_roots": ["~/.codex"],
+      "settings": [],
+      "globs": {
+        "human": ["AGENTS.md", "AGENTS.override.md"],
+        "agent": ["memories/**/*.md"]
+      },
+      "authorship": "path",
+      "documented": false,
+      "_documented_note": "The memories feature is experimental and off by default; OpenAI publishes no format. Paths reflect third-party observation. Version this entry against what is actually seen, not against a spec."
+    },
+    {
+      "tool": "copilot-cli",
+      "display": "GitHub Copilot CLI",
+      "env_root": ["COPILOT_HOME"],
+      "default_roots": ["~/.copilot"],
+      "settings": [],
+      "globs": {
+        "human": ["copilot-instructions.md", "instructions/**/*.instructions.md"],
+        "agent": []
+      },
+      "authorship": "path",
+      "documented": true,
+      "_note": "No agent-written memory exists for this tool. Human instructions only."
+    },
+    {
+      "tool": "windsurf",
+      "display": "Windsurf / Cascade",
+      "env_root": [],
+      "default_roots": ["~/.codeium/windsurf"],
+      "settings": [],
+      "globs": {
+        "human": ["memories/global_rules.md"],
+        "agent": ["memories/**/*.md"]
+      },
+      "authorship": "filename",
+      "human_filenames": ["global_rules.md"],
+      "_authorship_note": "One directory holds BOTH kinds. Only global_rules.md is the person's; everything else in memories/ is the model's. Tagging the directory as one thing is wrong half the time.",
+      "documented": true
+    },
+    {
+      "tool": "opencode",
+      "display": "OpenCode",
+      "env_root": ["OPENCODE_DATA_DIR"],
+      "default_roots": ["~/.config/opencode"],
+      "settings": [],
+      "globs": {
+        "human": ["AGENTS.md"],
+        "agent": ["memories/**/*.md"]
+      },
+      "authorship": "path",
+      "documented": true
+    },
+    {
+      "tool": "agents-standard",
+      "display": "Shared global convention",
+      "env_root": [],
+      "default_roots": ["~/.agents"],
+      "settings": [],
+      "globs": {
+        "human": ["AGENTS.md"],
+        "agent": []
+      },
+      "authorship": "path",
+      "documented": true,
+      "_note": "The tool-agnostic user-level instructions file a dozen tools now read in common. One entry covers most of the long tail at zero per-tool cost."
+    },
+    {
+      "tool": "arionix-fallback",
+      "display": "Manual fallback",
+      "env_root": [],
+      "default_roots": ["~/.arionix"],
+      "settings": [],
+      "globs": {
+        "human": ["context.md", "context/**/*.md"],
+        "agent": []
+      },
+      "authorship": "path",
+      "documented": true,
+      "_note": "For anyone whose tool keeps memory server-side or UI-only. Converts 'your tool is unsupported' into a manual option rather than a dead end."
+    }
+  ],
+
+  "unreachable": [
+    {
+      "tool": "cursor",
+      "reason": "Agent memories are server-side with no disclosed path. User rules are UI-only with no filesystem location. Project rules (.cursor/rules/) are committed and arrive via the source-control connector.",
+      "action": "Report as unsupported. Do not reverse-engineer the local chat store."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Run artifacts — these contain the verbatim body of everything the skill read.
+# They live in ~/.arionix by default; these entries guard against a stray copy.
+candidates.json
+classified.json
+payload.json
+publish-state.json
+.arionix/
+
+__pycache__/
+*.pyc
+.DS_Store
