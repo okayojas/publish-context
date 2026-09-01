@@ -449,6 +449,9 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
             # encoded path to a real repository name. Verified by re-encoding a
             # candidate directory and comparing, never by decoding the hint.
             mapped_name = (project_map or {}).get(raw)
+            # A "CONFIRM:" value is a suggestion awaiting a human, not a mapping.
+            if isinstance(mapped_name, str) and mapped_name.startswith("CONFIRM:"):
+                mapped_name = None
             if mapped_name:
                 scope_hints.append({
                     "text": mapped_name,

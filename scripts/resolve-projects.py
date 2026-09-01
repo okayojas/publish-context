@@ -44,6 +44,38 @@ def encode_path(p):
     return re.sub(r"[:\\/ ]", "-", str(p))
 
 
+# Folder names that reliably mark where a person's own paths begin. Everything
+# after the last one is the path relative to it — which for a single segment is
+# the directory name itself.
+# Deliberately conservative. A false anchor truncates a real name — 'project'
+# turned 'project-vantage' into 'vantage' — whereas a missing anchor merely
+# yields no suggestion. Tokens that plausibly appear *inside* a directory name
+# (project, src, code, dev, work, git, repo) are excluded for that reason.
+ANCHORS = {"downloads", "documents", "desktop", "projects", "repos",
+           "workspace", "dropbox", "onedrive", "developer", "sites"}
+
+
+def suggest_name(encoded):
+    """A prefill for the person to confirm — never a value that enters the graph.
+
+    Matching fails outright when the directory has been moved or deleted, which
+    is the common case for finished work. The encoded name still carries the
+    tail, so offer it rather than asking for a blank line.
+    """
+    parts = [t for t in encoded.split("-") if t]
+    last = None
+    for i, tok in enumerate(parts):
+        if tok.lower() in ANCHORS:
+            last = i
+    if last is None or last == len(parts) - 1:
+        return None, None
+    tail = "-".join(parts[last + 1:])
+    # No certainty label: whether 'CSE-112' is one directory or two is not
+    # decidable from the encoding, and a confident-sounding guess would be worse
+    # than naming the anchor and letting the person read it.
+    return tail, parts[last]
+
+
 def git_remote(d):
     try:
         r = subprocess.run(["git", "-C", str(d), "remote", "get-url", "origin"],
@@ -135,8 +167,11 @@ def main():
 
     matched, unmatched = [], []
     for enc, n in sorted(wanted.items(), key=lambda kv: -kv[1]):
-        if mapping.get(enc):
-            matched.append((enc, mapping[enc], n, "already mapped"))
+        existing = mapping.get(enc)
+        if isinstance(existing, str) and existing.startswith("CONFIRM:"):
+            existing = None          # a suggestion the person has not accepted
+        if existing:
+            matched.append((enc, existing, n, "already mapped"))
             continue
         hit = index.get(enc.lower())
         if not hit:
@@ -151,8 +186,13 @@ def main():
         print(f"  ✓ {name}")
         print(f"      {n} record(s) · {how}")
     for enc, n in unmatched:
+        name, certainty = suggest_name(enc)
         print(f"  ? {enc}")
-        print(f"      {n} record(s) · no checkout found — add it by hand below")
+        if name:
+            print(f"      {n} record(s) · no checkout found · relative to "
+                  f"{certainty}/ this is {name!r}")
+        else:
+            print(f"      {n} record(s) · no checkout found")
 
     mp = Path(args.map)
     mp.parent.mkdir(parents=True, exist_ok=True)
@@ -160,10 +200,20 @@ def main():
     print(f"\nwrote {mp}  ({len(mapping)} mapped)")
 
     if unmatched:
-        print("\nFor anything unmatched, add the real repository or service name:")
-        print(json.dumps({e: "owner/repo-or-service" for e, _ in unmatched}, indent=2))
-        print("\nNothing is guessed. An unmapped project keeps its encoded hint and")
-        print("stays flagged as unresolvable, which is the honest outcome.")
+        print("\nNo checkout matched these, which usually means the directory has "
+              "been\nmoved or deleted — a tool keeps its project folder after the "
+              "working\ndirectory is gone, so there is nothing left to match against.")
+        print("\nPrefilled with the directory name read off the tail of each path. "
+              "Confirm\nor correct, then re-run collect.py:\n")
+        stub = {}
+        for e, _ in unmatched:
+            name, certainty = suggest_name(e)
+            stub[e] = f"CONFIRM:{name}" if name else "owner/repo-or-service"
+        print(json.dumps(stub, indent=2, ensure_ascii=False))
+        print("\nA 'CONFIRM:' prefix is treated as unset — the value is a suggestion "
+              "for you,\nnot a mapping. Strip the prefix to accept it. Anything left "
+              "unmapped keeps\nits encoded hint and stays flagged unresolvable, which "
+              "is the honest outcome.")
     return 0
 
 
