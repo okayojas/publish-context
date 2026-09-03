@@ -79,8 +79,16 @@ Re-run `collect.py` afterwards so the upgraded hints land in the candidates.
 
 ## Step 3 — Classify
 
-Only when publishing. Read `reference/tier-rubric.md`, then work through
-`~/.arionix/candidates.json` one candidate at a time.
+Two reasons to run this, and they stop at different points:
+
+- **Classify only** — validate the taxonomy against a real store and stop. No
+  submission, no file is modified. This is the right default while the schema
+  sits at `0.x`, because it produces the two numbers the report cannot: kind
+  distribution and exclusion mix.
+- **Classify to publish** — the same pass, then steps 4 and 5.
+
+Read `reference/tier-rubric.md`, then work through `~/.arionix/candidates.json`
+one candidate at a time.
 
 The derivability test runs **first** — if the graph or the repository could
 already answer it, exclude it and move on. That filter removes more than
@@ -119,6 +127,18 @@ Excluded entries carry **counts and reasons only** — never the content.
 
 If several high-value records can't be scoped, batch the questions and ask once
 rather than dropping them or guessing.
+
+When the request was **classify only**, stop here and report:
+
+```bash
+python3 scripts/assemble.py --classified ~/.arionix/classified.json \
+                            --mode report-only
+python3 scripts/report.py --classified ~/.arionix/classified.json
+```
+
+`--mode report-only` stamps the payload so `submit.py` refuses it outright. The
+run still validates the classification, so a rubric mistake surfaces here rather
+than at publication time.
 
 ## Step 4 — Assemble and validate
 
