@@ -28,10 +28,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 3
+RUBRIC_VERSION = 4
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
+
+# Kinds that are meaningless without a subject. A constraint with no scope is a
+# prohibition that applies to everything, which is worse than dropping the
+# record; "ask X before touching Y" needs Y; a vocabulary entry's referent *is*
+# the claim. The rest legitimately have no external scope — a method preference
+# defaults to the publisher, and pinning it to one repository narrows it
+# wrongly rather than sharpening it.
+REQUIRES_SCOPE = {"rejected_alternative", "constraint", "authority", "vocabulary"}
 TARGETS = ["decision", "document", "preference_rule", "alias_proposal", "person_property"]
 SHARING = ["personal", "team", "org"]
 STILL = ["yes", "no", "unknown"]
@@ -107,10 +115,20 @@ def validate(payload):
         if c.get("pam_component") and c["pam_component"] not in PAM:
             errs.append(f"{w}: pam_component invalid")
 
-        for s in c.get("claimed_scope") or []:
+        scopes = c.get("claimed_scope") or []
+        for s in scopes:
             if s.get("resolution") != "unresolved" or s.get("canonical_id") is not None:
                 errs.append(f"{w}: claimed_scope must leave the machine unresolved "
                             f"with canonical_id null — the platform resolves it")
+
+        # A hint graded 'container' names the folder someone keeps code in. It
+        # is not a weaker scope, it is no scope, so it cannot satisfy a kind
+        # that requires one.
+        usable_scopes = [s for s in scopes if s.get("quality") != "container"]
+        if c.get("kind") in REQUIRES_SCOPE and not usable_scopes:
+            held = " (only a container hint, which names no project)" if scopes else ""
+            errs.append(f"{w}: kind {c['kind']!r} requires a scope and has none{held} "
+                        f"— ask what it applies to rather than publishing it unscoped")
 
         act = c.get("activation") or {}
         if act.get("inclusion") not in ("always", "fileMatch", "manual"):
@@ -144,6 +162,22 @@ def main():
 
     inter = json.loads(Path(args.candidates).read_text(encoding="utf-8"))
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
+
+    # A candidates.json written before refs were position-graded holds bare
+    # strings. Coerce rather than fail: 'body' is the honest reading of "this
+    # run doesn't know where the reference appeared", and it keeps a stale
+    # intermediate from emitting a payload that violates the schema.
+    stale_refs = 0
+    for c in inter["candidates"]:
+        rs = c.get("refs") or []
+        if rs and isinstance(rs[0], str):
+            c["refs"] = [{"text": r, "kind": "path" if "/" in r else "ticket",
+                          "zone": "body"} for r in rs]
+            stale_refs += 1
+    if stale_refs:
+        print(f"note: {stale_refs} record(s) had ungraded refs from an older "
+              f"collect.py — treated as zone 'body'. Re-run collect.py to grade "
+              f"them properly.", file=sys.stderr)
 
     # An id minted here must survive a re-run. Without this, assembling twice —
     # which happens whenever a classification is revised, or a submission fails
@@ -225,15 +259,24 @@ def main():
         else:
             hints = src.get("scope_hints") or []
 
+        # The collector's own grading of every hint it produced for this record.
+        # A classifier writing a scope by hand gets `name` by default — correct
+        # when it named a service from the body, wrong if it copied a hint the
+        # collector had already graded unusable. Defence in depth: the rubric
+        # says never attach a container hint, and this makes saying it useless.
+        graded = {h.get("text"): h.get("quality")
+                  for h in (src.get("scope_hints") or []) if h.get("quality")}
+
         scope = []
         for h in hints:
+            text = h.get("text", "")
             scope.append({
-                "text": h.get("text", ""),
+                "text": text,
                 "guess_kind": h.get("guess_kind", "unknown"),
                 "evidence": h.get("evidence", "body_reference"),
                 # carried through, not dropped: without it the platform cannot
                 # tell an encoded local path from a real name
-                "quality": h.get("quality", "name"),
+                "quality": h.get("quality") or graded.get(text) or "name",
                 "resolution": "unresolved",
                 "canonical_id": None,
             })

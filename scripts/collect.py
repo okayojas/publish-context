@@ -263,10 +263,22 @@ WHY = re.compile(
     r"(?=\n[ \t]*\n|\n[ \t]*\*\*|\Z)",
     re.IGNORECASE | re.MULTILINE | re.DOTALL)
 TICKET = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
-URL = re.compile(r"https?://[^\s)>\]]+")
+# Markdown puts URLs inside backticks and at the ends of sentences, so neither
+# character can be part of a reference. `[^\s)>\]]+` kept both and produced
+# refs like "https://host/v1`." — unmatchable by any resolver, yet counted as
+# attachment.
+URL = re.compile(r"https?://[^\s)>\]`\"']+")
 PATHY = re.compile(r"(?<![\w/])((?:src|lib|app|tests?|packages?)/[\w./*-]+)")
 MENTION = re.compile(r"(?<![\w])@([A-Za-z][\w.-]{2,})")
 EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")
+
+# Trailing punctuation a reference can never legitimately end with. Applied
+# after matching rather than baked into the pattern, because a URL may contain
+# any of these mid-string.
+_REF_TRAIL = ".,;:!?)`\"'>]}"
+
+# Strongest wins when the same reference appears more than once.
+_ZONE_RANK = {"statement": 3, "rationale": 2, "body": 1}
 
 
 def extract_rationale(body):
@@ -276,12 +288,34 @@ def extract_rationale(body):
     return re.sub(r"\s+", " ", m.group(1)).strip() or None
 
 
-def extract_refs(text):
-    refs = set()
-    refs.update(TICKET.findall(text))
-    refs.update(URL.findall(text))
-    refs.update(PATHY.findall(text))
-    return sorted(refs)
+def _refs_in(text):
+    """(text, kind) pairs found in one zone, trailing punctuation trimmed."""
+    out = []
+    for rx, kind in ((TICKET, "ticket"), (URL, "url"), (PATHY, "path")):
+        for hit in rx.findall(text or ""):
+            hit = hit.rstrip(_REF_TRAIL)
+            if hit:
+                out.append((hit, kind))
+    return out
+
+
+def extract_refs(statement, rationale, body):
+    """References graded by where they appear.
+
+    A reference in the statement is the author naming the subject *while making
+    the claim* — the strongest scope evidence available. The same string buried
+    in a 27k-character container body is a mention. Reading the whole record as
+    one zone made those indistinguishable, so a status dump looked as
+    well-attached as a one-line constraint.
+    """
+    best = {}
+    for zone, text in (("statement", statement), ("rationale", rationale),
+                       ("body", body)):
+        for text_, kind in _refs_in(text):
+            prior = best.get(text_)
+            if prior is None or _ZONE_RANK[zone] > _ZONE_RANK[prior["zone"]]:
+                best[text_] = {"text": text_, "kind": kind, "zone": zone}
+    return sorted(best.values(), key=lambda r: (-_ZONE_RANK[r["zone"]], r["text"]))
 
 
 def detect_subjects(text):
@@ -322,6 +356,36 @@ def _looks_encoded(text):
     return (low.startswith(("c--", "d--", "-users-", "-home-"))
             or "-users-" in low or "-home-" in low or "-documents-" in low
             or "-downloads-" in low or "-desktop-" in low)
+
+
+# Folder names that mark where a person's own paths begin. Kept in step with
+# ANCHORS in resolve-projects.py — the two answer the same question from
+# opposite ends, one grading a hint and one matching a directory.
+_ANCHORS = {"downloads", "documents", "desktop", "projects", "repos",
+            "workspace", "dropbox", "onedrive", "developer", "sites"}
+
+
+def _looks_container(text):
+    """True when an encoded hint names a code *parent*, not a project.
+
+    One person's store had 32 of 33 records hinting `-Users-<name>-Developer`:
+    the folder they keep every checkout in. That is not unresolvable — it is
+    resolvable to something meaningless, which is worse, because a person
+    reading "readable by a person, not by the resolver" will try to fix it and
+    there is no correct answer to give.
+
+    The test is the anchor landing last: nothing follows the known code parent,
+    so the hint names the parent itself. `suggest_name()` in
+    resolve-projects.py declines on exactly this shape; here it grades.
+    """
+    parts = [t for t in text.split("-") if t]
+    if not parts:
+        return False
+    last = None
+    for i, tok in enumerate(parts):
+        if tok.lower() in _ANCHORS:
+            last = i
+    return last is not None and last == len(parts) - 1
 
 
 def _norm_ts(v):
@@ -461,21 +525,32 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
                 })
                 sp = None
             else:
-                scope_hints.append({
-                    "text": raw,
-                    "evidence": "path",
                 # Graded, because some tools encode a whole filesystem path into
                 # the directory name. That is readable by a person and useless to
                 # a resolver, and counting it as attachment inflates the metric.
                 # It cannot be decoded either: separators and real hyphens are the
                 # same character, so the segmentation is genuinely ambiguous.
-                    "quality": "encoded_path" if _looks_encoded(raw) else "name",
+                #
+                # 'container' is the third case and the worst: the hint names the
+                # folder a person keeps all their checkouts in. No human can fix
+                # it, so it is reported as unfixable rather than as pending.
+                if not _looks_encoded(raw):
+                    quality = "name"
+                elif _looks_container(raw):
+                    quality = "container"
+                else:
+                    quality = "encoded_path"
+                scope_hints.append({
+                    "text": raw,
+                    "evidence": "path",
+                    "quality": quality,
                 })
 
     out = []
     for i, (chunk, auth) in enumerate(chunks):
         if not chunk.strip():
             continue
+        _rationale = extract_rationale(chunk)
         out.append({
             "memory_id": (mapped.get("identity")
                           or (prior or {}).get("memory_id")
@@ -492,10 +567,13 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
             "authority_signal": signal if len(chunks) == 1 else "section",
             "native_type": mapped.get("native_type"),
             "statement": mapped.get("statement"),
-            "rationale": extract_rationale(chunk),
+            "rationale": _rationale,
             "body": chunk.strip(),
             "activation": mapped["activation"],
-            "refs": extract_refs(chunk),
+            # The chunk is passed as the body zone even though it contains the
+            # rationale too — a ref found in both is graded by the stronger
+            # zone, so the overlap costs nothing and needs no text surgery.
+            "refs": extract_refs(mapped.get("statement"), _rationale, chunk),
             "scope_hints": scope_hints,
             "asserted_at": ts,
             "timestamp_source": ts_src,

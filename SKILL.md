@@ -59,9 +59,14 @@ publishing is available but don't do it uninvited.
 
 ## Step 2.5 — Resolve encoded project paths (only if the report flags them)
 
-If the attachment ceiling shows records carrying *only an encoded local path*,
-those are unpublishable as-is — the resolver can't use them and the skill won't
-invent an id.
+If **Scope evidence** shows records carrying only an `encoded_path` hint, those
+are unpublishable as-is — the resolver can't use them and the skill won't invent
+an id.
+
+Records graded `container` are a different matter: the hint names the folder the
+person keeps all their code in, so there is no correct answer and running the
+resolver won't produce one. Don't ask them to fix it. Scope for those has to come
+from the record's own text, or from asking what it applies to.
 
 ```bash
 python3 scripts/resolve-projects.py
@@ -97,6 +102,16 @@ anything else.
 For each survivor decide `kind`, `tier`, `target`, and fill `statement`,
 `rationale`, `pam_component`, `claimed_scope`, `sharing`. Leave `authority`
 alone — it is already set.
+
+**Scope is required for `constraint`, `rejected_alternative`, `authority` and
+`vocabulary`, and optional for the rest** — the assembler enforces it. For the
+optional kinds, an empty `claimed_scope` is a real answer, not a gap: a method
+preference applies to the publisher's work generally, and attaching whichever
+repo happened to be mentioned in the body narrows it wrongly. Write `[]`
+deliberately rather than omitting the key, which falls back to collected hints.
+
+When a required scope has no usable evidence, **ask** — don't reach for a body
+mention or a path hint.
 
 Watch for **containers** (rubric Step 2.5): a status or architecture summary is
 not one claim. It yields zero, one, or several, each with a `claim_index`, all
@@ -150,7 +165,8 @@ python3 scripts/assemble.py --classified ~/.arionix/classified.json \
 Mints ids, builds the envelope, computes the digest, and validates locally.
 **Do not proceed on a validation failure** — fix the classification and re-run.
 The validator is strict on purpose: it rejects a `confidence` field, a tier-3
-record, or a pre-resolved scope reference.
+record, a pre-resolved scope reference, or a scope-requiring kind with nothing to
+attach to.
 
 ## Step 5 — Confirm, then submit
 

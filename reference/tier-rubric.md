@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **3**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **4**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -104,6 +104,31 @@ trust in every other record.
 
 Seven values. Pick the one that fits; if two fit, prefer the higher row.
 
+| Kind | Tier | Target | Scope required |
+|---|---|---|---|
+| `rejected_alternative` | 1 | `decision` | **yes** |
+| `constraint` | 1 | `decision` | **yes** |
+| `authority` | 1 | `decision` | **yes** |
+| `preference` | 1 | `preference_rule` | no |
+| `playbook` | 2 | `document` | no |
+| `vocabulary` | 2 | `alias_proposal` | **yes** |
+| `external_reference` | 2 | `document` | no |
+
+**Scope required** is enforced by the assembler, not left to judgement. A
+constraint with no subject is a prohibition that applies to everything, which is
+worse than dropping the record; "ask X before touching Y" needs Y; a vocabulary
+entry's referent *is* the claim.
+
+The other four legitimately have no external scope. A method preference or
+playbook defaults to the publisher, and pinning it to one repository **narrows it
+wrongly** rather than sharpening it — "search the whole subsystem before claiming
+absence" applies to all code, not to whichever repo happened to be mentioned in
+the body. Don't attach a scope to those kinds just because a reference was
+available.
+
+A hint graded `container` does not count. It names the folder someone keeps their
+code in, which is not a weaker scope — it is no scope.
+
 ### `rejected_alternative` · tier 1 · target `decision`
 An approach tried or considered and deliberately abandoned, **with the reason**. The single highest-value kind — nothing else in the organization records what was *not* done, and re-proposing a killed approach is the most expensive failure mode of a coding agent.
 
@@ -164,7 +189,22 @@ Where something authoritative lives, outside the connected systems. Doubles as a
 
 **`pam_component`** — `factual` for constraints and vocabulary, `procedural` for playbooks, `identity` for preferences and person properties.
 
-**`claimed_scope`** — take the extracted `scope_hints` and `refs` and record what this applies to. Every entry keeps `resolution: "unresolved"` and `canonical_id: null`. **Never invent an identifier.** An unresolved reference is honest; a wrong one is a bad edge in the graph with a citation on it.
+**`claimed_scope`** — take the extracted `scope_hints` and `refs` and record what this applies to, but only for the kinds that require it (Step 3). Every entry keeps `resolution: "unresolved"` and `canonical_id: null`. **Never invent an identifier.** An unresolved reference is honest; a wrong one is a bad edge in the graph with a citation on it.
+
+Grade the evidence you're working from — the collector already did most of it:
+
+| Source | Strength |
+|---|---|
+| `refs` with `zone: "statement"` | strongest — the author named the subject *while making the claim* |
+| `refs` with `zone: "rationale"` | strong |
+| `scope_hints` with `quality: "name"` | good — a real project name, verified or unencoded |
+| `refs` with `zone: "body"` | weak — a mention, not a subject. Fine as corroboration, thin on its own |
+| `scope_hints` with `quality: "encoded_path"` | unusable until `resolve-projects.py` upgrades it |
+| `scope_hints` with `quality: "container"` | **not a scope.** Never attach it |
+
+A ticket or ADR id is the most *resolvable* thing available, because it is already canonical in a connected system. Prefer it when present.
+
+If a required scope has no usable evidence, **ask** — batch the question per the last section. Don't fall back to a body mention and don't fall back to the path.
 
 **`sharing`** — default `personal`. Propose `team` only when the content is plainly about shared work and the person confirms it. Never default to `org`.
 

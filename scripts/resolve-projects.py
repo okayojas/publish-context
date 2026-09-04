@@ -76,6 +76,41 @@ def suggest_name(encoded):
     return tail, parts[last]
 
 
+def holds_checkouts(d, limit=2):
+    """How many *other* checkouts live under this directory, up to `limit`.
+
+    A directory that holds several repositories is where someone keeps their
+    code, not a project. Matching one and taking its name would map every record
+    in the store to a scope like "Developer" — and it would arrive graded `name`
+    with `evidence: project_map`, reading as *verified*. A confidently wrong
+    scope is worse than an honest useless one, and this function guards the only
+    place in the pipeline that can manufacture one.
+
+    Two, not one: a repository with a single vendored dependency is ordinary.
+    """
+    found = 0
+    stack = [(d, 0)]
+    while stack and found < limit:
+        cur, depth = stack.pop()
+        if depth >= 2:
+            continue
+        try:
+            for child in cur.iterdir():
+                if not child.is_dir() or child.is_symlink():
+                    continue
+                if child.name in SKIP or child.name.startswith("."):
+                    continue
+                if (child / ".git").exists():
+                    found += 1
+                    if found >= limit:
+                        break
+                else:
+                    stack.append((child, depth + 1))
+        except (PermissionError, OSError):
+            continue
+    return found
+
+
 def git_remote(d):
     try:
         r = subprocess.run(["git", "-C", str(d), "remote", "get-url", "origin"],
@@ -131,12 +166,24 @@ def main():
         return 1
 
     d = json.loads(cpath.read_text(encoding="utf-8"))
-    wanted = {}
+    wanted, container_hints = {}, {}
     for c in d["candidates"]:
         for h in c.get("scope_hints") or []:
-            if h.get("quality") == "encoded_path":
-                wanted.setdefault(h["text"], 0)
-                wanted[h["text"]] += 1
+            q = h.get("quality")
+            if q == "encoded_path":
+                wanted[h["text"]] = wanted.get(h["text"], 0) + 1
+            elif q == "container":
+                container_hints[h["text"]] = container_hints.get(h["text"], 0) + 1
+
+    # Graded unfixable by the collector, so they are not work — but say so.
+    # Silently omitting them would read as "nothing to do here".
+    for enc, n in sorted(container_hints.items(), key=lambda kv: -kv[1]):
+        print(f"  - {enc}")
+        print(f"      {n} record(s) · names a code parent, not a project — "
+              f"nothing to resolve")
+    if container_hints:
+        print("      scope for these has to come from the record text or from "
+              "asking\n")
 
     if not wanted:
         print("No encoded-path hints to resolve.")
@@ -165,7 +212,7 @@ def main():
         except Exception:
             mapping = {}
 
-    matched, unmatched = [], []
+    matched, unmatched, containers = [], [], []
     for enc, n in sorted(wanted.items(), key=lambda kv: -kv[1]):
         existing = mapping.get(enc)
         if isinstance(existing, str) and existing.startswith("CONFIRM:"):
@@ -177,6 +224,13 @@ def main():
         if not hit:
             unmatched.append((enc, n))
             continue
+        # A match is not automatically an answer. `find_repos` stops descending
+        # at the first `.git`, so this only fires when the code parent is itself
+        # a checkout — which is precisely when the old code mapped it happily.
+        held = holds_checkouts(hit)
+        if held >= 2:
+            containers.append((enc, n, hit, held))
+            continue
         remote = git_remote(hit)
         name = remote or hit.name
         mapping[enc] = name
@@ -185,6 +239,12 @@ def main():
     for enc, name, n, how in matched:
         print(f"  ✓ {name}")
         print(f"      {n} record(s) · {how}")
+    for enc, n, hit, held in containers:
+        print(f"  ! {enc}")
+        print(f"      {n} record(s) · matched {hit}, but it holds "
+              f"{held}+ checkouts")
+        print(f"      that names where code is kept, not a project — left "
+              f"unmapped on purpose")
     for enc, n in unmatched:
         name, certainty = suggest_name(enc)
         print(f"  ? {enc}")

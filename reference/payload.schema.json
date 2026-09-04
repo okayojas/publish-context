@@ -267,7 +267,7 @@
               },
               "evidence": {
                 "type": "string",
-                "description": "e.g. path · git_remote_at_collect_time · body_reference"
+                "description": "e.g. path · project_map · body_reference"
               },
               "resolution": {
                 "const": "unresolved"
@@ -278,17 +278,44 @@
               "quality": {
                 "enum": [
                   "name",
-                  "encoded_path"
+                  "encoded_path",
+                  "container"
                 ],
-                "description": "'encoded_path' is a flattened local filesystem path — readable by a person, never resolvable by the resolver. Carried so the platform can measure real attachment instead of counting every hint."
+                "description": "'encoded_path' is a flattened local filesystem path — readable by a person, never resolvable by the resolver. 'container' names a directory that holds other checkouts (a code parent, not a project): it cannot be made resolvable by anyone, because there is no correct answer. Carried so the platform can measure real attachment instead of counting every hint."
               }
             }
           }
         },
         "refs": {
           "type": "array",
+          "description": "References graded by where they appeared. A ref in the statement is the author naming the subject while making the claim; the same string in a long body is only a mention. The platform uses 'zone' to weight scope resolution.",
           "items": {
-            "type": "string"
+            "type": "object",
+            "required": [
+              "text",
+              "kind",
+              "zone"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "ticket",
+                  "url",
+                  "path"
+                ]
+              },
+              "zone": {
+                "enum": [
+                  "statement",
+                  "rationale",
+                  "body"
+                ]
+              }
+            }
           }
         },
         "activation": {

@@ -19,6 +19,16 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    # Single source of truth. Duplicating the set here would drift the moment
+    # one file is edited and the other isn't — which has already happened once
+    # between the live skill directory and the repository.
+    from assemble import REQUIRES_SCOPE
+except Exception:                                    # pragma: no cover
+    REQUIRES_SCOPE = {"rejected_alternative", "constraint", "authority",
+                      "vocabulary"}
+
 
 def _utf8_console():
     """A stock Windows console encodes stdout as cp1252, which cannot represent
@@ -135,26 +145,54 @@ def main():
     print(f"  {withpat}/{total} carry a real trigger  {bar(withpat, total)}")
     print(f"  \033[2m{total - withpat} load unconditionally — every run pays for them\033[0m")
 
-    # ---- 5. scope-reference density (the attachment ceiling)
-    rule("Attachment ceiling")
+    # ---- 5. scope evidence available (descriptive only)
+    #
+    # This used to be reported as the "attachment ceiling" with `total` as the
+    # denominator, which measured the wrong thing: a method preference that
+    # correctly carries no external scope was counted as an attachment failure.
+    # Whether a record *needs* a scope follows from its kind, so the real ceiling
+    # cannot be computed until classification has run. It now lives in the
+    # --classified block below; this is a plain inventory of what evidence exists.
+    rule("Scope evidence")
 
-    def usable(c):
-        if c.get("refs"):
-            return True
-        return any(h.get("quality", "name") == "name" for h in c.get("scope_hints") or [])
+    def strongest_ref_zone(c):
+        for z in ("statement", "rationale", "body"):
+            if any(r.get("zone") == z for r in c.get("refs") or []
+                   if isinstance(r, dict)):
+                return z
+        # A pre-0.4 candidates.json has refs as bare strings.
+        return "body" if c.get("refs") else None
 
-    withref = sum(1 for c in cands if usable(c))
-    encoded = sum(1 for c in cands
-                  if not usable(c)
-                  and any(h.get("quality") == "encoded_path"
-                          for h in c.get("scope_hints") or []))
-    print(f"  {withref}/{total} name something resolvable  {bar(withref, total)}")
-    if encoded:
-        print(f"  \033[33m{encoded} carry only an encoded local path — readable by a "
-              f"person, not by the resolver\033[0m")
-    floating = total - withref - encoded
-    if floating:
-        print(f"  \033[2m{floating} would land as floating sentences\033[0m")
+    def hint_quality(c):
+        qs = {h.get("quality", "name") for h in c.get("scope_hints") or []}
+        for q in ("name", "encoded_path", "container"):
+            if q in qs:
+                return q
+        return None
+
+    zones = Counter(z for z in (strongest_ref_zone(c) for c in cands) if z)
+    for z in ("statement", "rationale", "body"):
+        if zones.get(z):
+            note = {"statement": "named while making the claim — strongest",
+                    "rationale": "named in the reasoning",
+                    "body": "mentioned only — weak evidence"}[z]
+            print(f"  ref in {z:<10} {zones[z]:>3}  \033[2m{note}\033[0m")
+
+    hq = Counter(q for q in (hint_quality(c) for c in cands) if q)
+    for q in ("name", "encoded_path", "container"):
+        if hq.get(q):
+            note = {"name": "real project name",
+                    "encoded_path": "encoded local path — run resolve-projects.py",
+                    "container": "names a code parent, not a project — unfixable"}[q]
+            colour = "\033[33m" if q == "container" else "\033[2m"
+            print(f"  path hint: {q:<11} {hq[q]:>3}  {colour}{note}\033[0m")
+
+    bare = sum(1 for c in cands
+               if not strongest_ref_zone(c) and not hint_quality(c))
+    if bare:
+        print(f"  \033[2mno scope evidence at all   {bare:>3}\033[0m")
+    print("  \033[2mwhether a record needs a scope depends on its kind — "
+          "see the ceiling below\033[0m")
 
     # ---- 6. timestamp provenance
     rule("Timestamps")
@@ -181,6 +219,43 @@ def main():
         kinds = Counter(c.get("kind") for c in kept)
         for k, v in kinds.most_common():
             print(f"  {v:>3}  {k:<22} {bar(v, len(kept) or 1, 16)}")
+
+        # ---- the real attachment ceiling, now that kinds are known
+        rule("Attachment ceiling")
+        need = [c for c in kept if c.get("kind") in REQUIRES_SCOPE]
+        opt = len(kept) - len(need)
+
+        # The classifier's hand-written scopes carry no `quality`, so grade them
+        # against the collector's hints the same way assemble.py does — else a
+        # container hint copied by hand reads as a real scope here.
+        by_ch = {c["content_hash"]: c for c in cands}
+
+        def has_scope(c):
+            src = by_ch.get((c.get("content_hash") or "").split(":")[-1], {})
+            graded = {h.get("text"): h.get("quality")
+                      for h in (src.get("scope_hints") or []) if h.get("quality")}
+            entries = c.get("claimed_scope")
+            if entries is None:
+                entries = src.get("scope_hints") or []
+            for s in entries:
+                q = s.get("quality") or graded.get(s.get("text")) or "name"
+                if q != "container":
+                    return True
+            return False
+
+        scoped = [c for c in need if has_scope(c)]
+        blocking = [c for c in need if not has_scope(c)]
+        print(f"  requires scope  {len(need):>3}")
+        if need:
+            print(f"    scoped        {len(scoped):>3}  {bar(len(scoped), len(need), 18)}")
+        if blocking:
+            print(f"  \033[33m    blocking      {len(blocking):>3}  "
+                  f"← publication blocked until resolved\033[0m")
+            for c in blocking[:5]:
+                print(f"        \033[2m{c.get('kind')}: "
+                      f"{(c.get('statement') or '')[:58]}\033[0m")
+        print(f"  scope optional  {opt:>3}  \033[2mpublisher- or org-scoped "
+              f"by kind\033[0m")
 
         rule("Exclusion mix")
         ex_total = sum(e["count"] for e in excl)
