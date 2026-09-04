@@ -239,7 +239,7 @@ def main():
                 entries = src.get("scope_hints") or []
             for s in entries:
                 q = s.get("quality") or graded.get(s.get("text")) or "name"
-                if q != "container":
+                if q not in ("container", "encoded_path"):
                     return True
             return False
 

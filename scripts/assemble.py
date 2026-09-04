@@ -121,14 +121,25 @@ def validate(payload):
                 errs.append(f"{w}: claimed_scope must leave the machine unresolved "
                             f"with canonical_id null — the platform resolves it")
 
-        # A hint graded 'container' names the folder someone keeps code in. It
-        # is not a weaker scope, it is no scope, so it cannot satisfy a kind
-        # that requires one.
-        usable_scopes = [s for s in scopes if s.get("quality") != "container"]
+        # Neither low grade can satisfy a scope requirement, and for the same
+        # reason: an `encoded_path` is "readable by a person, never resolvable by
+        # the resolver" by its own definition, and a `container` names the folder
+        # someone keeps code in. They differ only in whether anything can be
+        # done about it — the resolver can upgrade the first and nothing can fix
+        # the second — so they get different advice, not different verdicts.
+        UNUSABLE = ("container", "encoded_path")
+        usable_scopes = [s for s in scopes if s.get("quality") not in UNUSABLE]
         if c.get("kind") in REQUIRES_SCOPE and not usable_scopes:
-            held = " (only a container hint, which names no project)" if scopes else ""
-            errs.append(f"{w}: kind {c['kind']!r} requires a scope and has none{held} "
-                        f"— ask what it applies to rather than publishing it unscoped")
+            grades = {s.get("quality") for s in scopes}
+            if "encoded_path" in grades:
+                why = (" — its only scope is an encoded local path; run "
+                       "resolve-projects.py, then re-collect")
+            elif "container" in grades:
+                why = (" — its only scope names a code parent, not a project; "
+                       "ask what it applies to")
+            else:
+                why = " — ask what it applies to rather than publishing it unscoped"
+            errs.append(f"{w}: kind {c['kind']!r} requires a scope and has none{why}")
 
         act = c.get("activation") or {}
         if act.get("inclusion") not in ("always", "fileMatch", "manual"):

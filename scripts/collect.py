@@ -288,14 +288,48 @@ def extract_rationale(body):
     return re.sub(r"\s+", " ", m.group(1)).strip() or None
 
 
+# Hosts that cannot name anything outside the machine that wrote the record.
+# `.test`, `.localhost`, `.invalid` and `.example` are reserved by RFC 6761 and
+# `.local` by RFC 6762 — they are guaranteed never to resolve publicly, so this
+# is a specification, not a guess-list.
+_UNROUTABLE_TLD = (".test", ".local", ".localhost", ".invalid", ".example")
+_UNROUTABLE_HOST = {"localhost", "host.docker.internal", "127.0.0.1", "::1",
+                    "0.0.0.0"}
+_PRIVATE_IP = re.compile(r"^(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)")
+
+
+def _routable(host):
+    """False for a host that only means something on one laptop.
+
+    One store counted `http://localhost:8080`, `http://host.docker.internal:8003`
+    and `http://agent-writeback-api:8007` as resolvable references. They are
+    local service endpoints and Docker service names, and treating them as
+    attachment inflated that store's ceiling to 19/25.
+
+    A single-label host is the Docker-service case: no dot at all, so it can
+    only be resolved by that machine's compose network.
+    """
+    host = host.lower().split("@")[-1]
+    if host in _UNROUTABLE_HOST or _PRIVATE_IP.match(host):
+        return False
+    if host.endswith(_UNROUTABLE_TLD):
+        return False
+    return "." in host
+
+
 def _refs_in(text):
     """(text, kind) pairs found in one zone, trailing punctuation trimmed."""
     out = []
     for rx, kind in ((TICKET, "ticket"), (URL, "url"), (PATHY, "path")):
         for hit in rx.findall(text or ""):
             hit = hit.rstrip(_REF_TRAIL)
-            if hit:
-                out.append((hit, kind))
+            if not hit:
+                continue
+            if kind == "url":
+                host = re.sub(r"^https?://", "", hit).split("/")[0].split(":")[0]
+                if not _routable(host):
+                    continue
+            out.append((hit, kind))
     return out
 
 
@@ -318,9 +352,30 @@ def extract_refs(statement, rationale, body):
     return sorted(best.values(), key=lambda r: (-_ZONE_RANK[r["zone"]], r["text"]))
 
 
+# RFC 2606 reserves these second-level domains for documentation and examples.
+_EXAMPLE_DOMAIN = ("example.com", "example.net", "example.org", "arionix.test")
+
+
 def detect_subjects(text):
-    """Cheap signal only — feeds the sensitivity check downstream. Not identity."""
-    return sorted(set(MENTION.findall(text)) | set(EMAIL.findall(text)))
+    """Cheap signal only — feeds the sensitivity check downstream. Not identity.
+
+    Filtered, because `subjects` drives per-person encryption and erasure-index
+    registration downstream. Two real stores show why a raw match is wrong: one
+    reported `mariozechner`, the upstream author of an open-source agent cited
+    in a research note; the other reported `admin@arionix.test`,
+    `qa.lead@arionix.test` and `admin@arionx.local` — synthetic test accounts on
+    reserved TLDs. Registering an erasure obligation for a maintainer who was
+    merely cited, or for four fixtures that do not exist, is noise in the index
+    and a spurious data-subject claim on top of it.
+
+    Reserved and example domains can never identify a person, so they are
+    dropped outright. An @handle with no address is kept: it may be a real
+    colleague, and the rubric's person_sensitive rule is the right place to
+    judge that — with a body to read, which this function does not have.
+    """
+    emails = {e for e in EMAIL.findall(text)
+              if _routable(e) and not e.lower().endswith(_EXAMPLE_DOMAIN)}
+    return sorted(set(MENTION.findall(text)) | emails)
 
 
 # The cwd git remote was briefly used as a scope hint. Removed: it reported the
