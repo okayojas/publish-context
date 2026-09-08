@@ -112,8 +112,12 @@
               "derivable",
               "session_local",
               "person_sensitive",
-              "unclassifiable"
-            ]
+              "unclassifiable",
+              "secret_bearing",
+              "provisional",
+              "machine_local"
+            ],
+            "description": "secret_bearing: a credential was detected at collect time and the body was never copied. provisional: written down before it was agreed — a proposal or draft, distinct from the staleness `still_true` covers. machine_local: true and durable but about one machine, so unshareable rather than short-lived."
           },
           "count": {
             "type": "integer",

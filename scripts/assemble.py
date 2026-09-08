@@ -28,7 +28,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 4
+RUBRIC_VERSION = 5
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
@@ -45,7 +45,21 @@ SHARING = ["personal", "team", "org"]
 STILL = ["yes", "no", "unknown"]
 ORIGIN = ["user_stated", "model_inferred", "derived_from_correction", "unknown"]
 PAM = ["factual", "procedural", "identity"]
-EXCL = ["derivable", "session_local", "person_sensitive", "unclassifiable"]
+# Why a record never entered the system. Counts and reasons only, never content.
+EXCL = ["derivable", "session_local", "person_sensitive", "unclassifiable",
+        # A credential was detected at collect time. Distinct from
+        # 'unclassifiable' on purpose: that reads as "we couldn't tell", and a
+        # key in a memory file is something we could tell exactly.
+        "secret_bearing",
+        # Written down before it was agreed — a proposal, a draft ticket, an
+        # architecture position marked "awaiting decision". Publishing one tells
+        # every agent in the org it is settled. Not a staleness problem, which
+        # is what `still_true` covers.
+        "provisional",
+        # True, durable, not derivable from any repo — and about one laptop.
+        # Ports, container names, local stack layout. `session_local` means
+        # "meaningless in three months"; these stay true and stay unshareable.
+        "machine_local"]
 
 
 def canonical(obj):
@@ -247,6 +261,18 @@ def main():
                 input_errs.append(f"{w}: claimed_scope entry {s_.get('text')!r} carries a "
                                   f"resolved id — the machine has no graph access and must "
                                   f"never invent one")
+
+        # A quarantined record has no body, statement or rationale to classify,
+        # so classifying one means the model authored content the collector
+        # deliberately refused to copy. Refuse the whole batch rather than drop
+        # the record: a classifier reaching for a secret-bearing file is a rubric
+        # failure worth surfacing, not something to silently absorb.
+        src_ = by_hash.get(d.get("content_hash"))
+        if src_ and src_.get("secret_detected"):
+            kinds_ = ", ".join(sorted({f['kind'] for f in src_.get('secret_findings', [])}))
+            input_errs.append(f"{w}: {Path(src_['source_path']).name} was quarantined at "
+                              f"collect time ({kinds_}) and must be excluded as "
+                              f"`secret_bearing` — it has no body to publish")
     if input_errs:
         print("CLASSIFICATION REJECTED — nothing written\n", file=sys.stderr)
         for e in input_errs:

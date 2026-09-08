@@ -464,6 +464,76 @@ def _norm_ts(v):
     return v
 
 
+# ------------------------------------------------------------------- secrets
+#
+# Agent memory is where "the thing I had to look up to get unstuck" accumulates,
+# which is disproportionately keys, hostnames and local stack config. One real
+# store carried `sk-LA0G…` in a 27k-character body and had a file named
+# `arionix-dev-credentials.md`; another had four auth-adjacent records.
+#
+# This runs at collect time, before a body is ever written, because the
+# alternative is asking a model to notice a key buried in 27,000 characters —
+# exactly the judgement call the rubric refuses to make everywhere else.
+#
+# Deliberately a FLOOR, not a guarantee. Prefixed tokens, PEM headers and JWT
+# shape catch the real cases with near-zero false positives. Entropy scanning is
+# omitted on purpose: it is noisy enough to train people to ignore the flag,
+# which is worse than not flagging. A UUID-shaped client secret will slip
+# through, and the report says so rather than implying coverage.
+_SECRET_PATTERNS = [
+    ("openai_or_anthropic_key", re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_-]{12,}")),
+    ("github_token",   re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}")),
+    ("github_pat",     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}")),
+    ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("slack_token",    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
+    ("gitlab_pat",     re.compile(r"\bglpat-[A-Za-z0-9_-]{16,}")),
+    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("huggingface",    re.compile(r"\bhf_[A-Za-z0-9]{30,}")),
+    ("npm_token",      re.compile(r"\bnpm_[A-Za-z0-9]{30,}")),
+    ("digitalocean",   re.compile(r"\bdop_v1_[a-f0-9]{60,}")),
+    ("sendgrid",       re.compile(r"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}")),
+    ("pypi_token",     re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}")),
+    ("private_key",    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
+    ("jwt",            re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+    # An assigned literal next to a secret-ish name. Requires 8+ characters and
+    # rejects the placeholders that make this pattern noisy elsewhere.
+    ("assigned_secret", re.compile(
+        r"(?i)\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|"
+        r"client[_-]?secret|auth[_-]?token|private[_-]?key)\b\s*[:=]\s*"
+        r"[\"'`]?([^\s\"'`,;]{8,})")),
+]
+
+# Values that look assigned but carry nothing. Checked only for the generic
+# assignment rule — a real prefixed token is never a placeholder.
+_PLACEHOLDER = re.compile(
+    r"(?i)^(?:x{3,}|\*{3,}|\.{3,}|<.*>|\$\{?[a-z_]+\}?|change[_-]?me|"
+    r"your[_-]?\w+|redacted|placeholder|example|dummy|todo|none|null|true|"
+    r"false|\d+|env(?:ironment)?|see[_-]\w+|hidden|elided|\w*\.{3}|"
+    r"[a-z_]*(?:secret|password|token|key)[a-z_]*)$")
+
+
+def scan_secrets(text):
+    """[(kind, line_number)] for every apparent credential. Never the value.
+
+    Returning the matched string would defeat the purpose: this function exists
+    so the secret has one fewer place to live, and the report has to be safe to
+    paste into a ticket.
+    """
+    hits = []
+    for i, line in enumerate((text or "").splitlines(), start=1):
+        for kind, rx in _SECRET_PATTERNS:
+            m = rx.search(line)
+            if not m:
+                continue
+            if kind == "assigned_secret":
+                val = (m.group(1) or "").strip("\"'`")
+                if _PLACEHOLDER.match(val) or "/" in val or val.startswith("#"):
+                    continue
+            hits.append((kind, i))
+            break                      # one finding per line is enough to hold it
+    return hits
+
+
 def _flatten(d, prefix=""):
     """Some tools nest (Claude Code puts `type` under `metadata:`), so match on
     both the dotted path and the leaf name."""
@@ -606,6 +676,44 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
         if not chunk.strip():
             continue
         _rationale = extract_rationale(chunk)
+
+        # Quarantine before anything is copied. The record still appears — the
+        # person is entitled to know their memory holds a key, and rule 4 says
+        # they see everything before it leaves — but the body, statement and
+        # rationale are dropped rather than carried, so the secret's only home
+        # stays the original file. The classifier cannot rescue it: there is
+        # nothing left to classify, and the rubric's `secret_bearing` reason is
+        # the only honest outcome.
+        _secrets = scan_secrets(chunk)
+        if _secrets:
+            out.append({
+                "memory_id": None,
+                "tool": tool["tool"],
+                "source_path": str(path),
+                "source_rel": rel,
+                "source_has_frontmatter": had_fm,
+                "chunk_index": i if len(chunks) > 1 else None,
+                "content_hash": hashlib.sha256(chunk.encode()).hexdigest(),
+                "source_hash": src_hash,
+                "authority": auth,
+                "authority_signal": signal if len(chunks) == 1 else "section",
+                "native_type": mapped.get("native_type"),
+                "statement": None,
+                "rationale": None,
+                "body": None,
+                "secret_detected": True,
+                "secret_findings": [{"kind": k, "line": ln} for k, ln in _secrets],
+                "activation": mapped["activation"],
+                "refs": [],
+                "scope_hints": scope_hints,
+                "asserted_at": ts,
+                "timestamp_source": ts_src,
+                "subjects_detected": [],
+                "unknown_frontmatter_keys": unknown,
+                "documented_source": tool.get("documented", True),
+            })
+            continue
+
         out.append({
             "memory_id": (mapped.get("identity")
                           or (prior or {}).get("memory_id")

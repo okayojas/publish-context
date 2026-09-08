@@ -118,6 +118,27 @@ def main():
         print("\n  No changed records. Nothing to report.\n")
         return 0
 
+    # ---- 1b. quarantine, before anything else about content
+    #
+    # Reported near the top and by filename, because it is the one finding a
+    # person may want to act on in the original file rather than here. Line
+    # numbers, never values — this output has to stay safe to paste.
+    quarantined = [c for c in cands if c.get("secret_detected")]
+    if quarantined:
+        rule("Quarantined — credential detected")
+        print(f"  {len(quarantined)} record(s) matched at collect time. The body was "
+              f"never copied,")
+        print(f"  \033[2mso nothing below can be published and nothing was written to "
+              f"candidates.json.\033[0m\n")
+        for c in quarantined:
+            kinds = ", ".join(sorted({f["kind"] for f in c.get("secret_findings", [])}))
+            lines = ", ".join(str(f["line"]) for f in c.get("secret_findings", [])[:6])
+            print(f"  \033[33m!\033[0m {Path(c['source_path']).name}")
+            print(f"      {kinds}  \033[2m· line {lines}\033[0m")
+        print(f"\n  \033[2mThis is a floor, not a guarantee: prefixed tokens, PEM "
+              f"headers, JWTs and\n  assigned literals. A bare high-entropy string "
+              f"with no marker will pass.\033[0m")
+
     # ---- 2. authorship split
     rule("Authorship")
     auth = Counter(c["authority"] for c in cands)

@@ -1,8 +1,25 @@
 # Classification rubric
 
-Rubric version **4**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **5**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
+
+---
+
+## Step 0 — Quarantined records are already decided
+
+A record with `"secret_detected": true` has **no `body`, `statement` or
+`rationale`** — the collector detected a credential and refused to copy them.
+There is nothing to classify.
+
+Count it under `excluded` as **`secret_bearing`** and move on. Do not reconstruct
+a statement from the filename, and do not classify it from what you can infer:
+the assembler rejects the whole batch if you try, because a classifier reaching
+into a quarantined file is a rubric failure worth surfacing rather than
+absorbing.
+
+Tell the person the filename and the finding kinds. Never quote a value, and
+don't ask them to paste the line.
 
 ---
 
@@ -25,9 +42,21 @@ The pattern: **a fact about current state is derivable; the reasoning behind it 
 
 ---
 
-## Step 2 — Two more exclusions, both mechanical
+## Step 2 — Four more exclusions, all mechanical
 
 **`session_local`** — scaffolding with no durable value. "The user wants me to refactor this file." "Working on the auth bug today." If it would be meaningless in three months, exclude it.
+
+**`provisional`** — written down before it was agreed. A draft ticket, a proposal, an architecture position marked "awaiting decision", a plan with competing alternatives still open.
+
+The test is whether the record itself signals that the matter is open — "status: awaiting decision", "pending ADR-0012…0020", "draft", "proposed", "option A vs option B". If it does, exclude it however well-argued it is.
+
+> A real store held a third competing architecture position, explicitly `status: awaiting decision`, whose kernel classified cleanly as a `constraint`. Publishing it would have told every agent in the organization that this was the direction. `still_true` does not cover this — that field is about a claim going stale, not about one that was never settled.
+
+**`machine_local`** — true, durable, not derivable from any repository, and about **one machine**. Local ports, container names, compose-project layout, which folder holds which checkout, this laptop's network quirks.
+
+The distinction from `session_local` is duration: these stay true. The distinction from `derivable` is that no shared system of record holds them — the laptop is the only record, which is exactly why they are worthless to anyone else.
+
+Careful here, because machine-local records often *wrap* something shareable. "Use `docker start`, never `docker compose up`, because the orchestrator loses its queue offsets" is about the team's stack, not one laptop — keep it. "The stack runs on ports 8000–8010 on this machine" is not. When a record mixes both, that is Step 2.5's job, not this one.
 
 **`person_sensitive`** — anything evaluative about a named colleague. Performance, competence, reliability, working style *of someone other than the publisher*. This is **not a judgement call**: if a person other than the publisher is named and the content characterizes them, exclude it. Report the count, never the content.
 
