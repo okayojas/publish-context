@@ -153,13 +153,21 @@ Write your decisions to `~/.arionix/classified.json`:
       "sharing": "team", "still_true": "unknown", "origin": "user_stated" }
   ],
   "excluded": [
-    { "reason": "derivable", "count": 9 },
-    { "reason": "person_sensitive", "count": 2 }
+    { "reason": "derivable", "count": 41, "unit": "fragment",
+      "note": "counted while decomposing containers" },
+    { "reason": "person_sensitive", "count": 2, "unit": "fragment" }
   ]
 }
 ```
 
-Excluded entries carry **counts and reasons only** — never the content.
+Excluded entries carry **counts and reasons only** — never the content. `unit` is
+required and must be the same throughout: count **fragments**, because a record
+that yields one kernel out of nine is not an excluded record, and counting at
+record level reads as zero exclusions. Emit a fragment entry even when it is
+zero — an empty list carries no unit and so proves nothing either way.
+
+`note` records *how* the count was taken, never what was excluded; it ships in
+the payload, so a quoted excerpt there publishes what the exclusion withheld.
 
 If several high-value records can't be scoped, batch the questions and ask once
 rather than dropping them or guessing.

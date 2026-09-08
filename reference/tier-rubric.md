@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **6**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **7**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -154,7 +154,42 @@ They share the container's body and hash — that is the evidence a reviewer
 reads, and it is why several claims can point at one file. Their ids differ.
 
 A container with no kernel yields **nothing**: count it under `excluded` as
-`derivable` and move on. That is the common outcome and it is not a failure.
+`derivable` and move on. That is not a failure — but it is also not the common
+outcome, and assuming it was cost a real run half its yield.
+
+> A pass over 17 records produced 36 claims and excluded none. Re-run with Step 1
+> enforced, the same records produced **50** claims. The failure was two-sided:
+> the pass under-excluded *and* under-mined, both in this step, because it
+> treated dense containers as yielding one or two claims each. One plan went
+> 4 → 11. Mine the container properly and the exclusions appear on their own —
+> they are the fragments you rejected on the way.
+
+### Count exclusions in fragments, and say so
+
+`excluded` entries carry a **`unit`**, and it must be the same throughout:
+
+| `unit` | What `count` counts |
+|---|---|
+| `fragment` | individual claims discarded while decomposing. **Use this.** |
+| `record` | whole candidates dropped before Step 2.5 ever opened them |
+
+Fragment level is the only unit at which this step's work is visible. A record
+that yields one kernel out of nine fragments is not an excluded record — count
+it at record level and it reads as zero exclusions, which is what happened:
+
+> That same run reported 0% excluded. At record level the figure was honest,
+> since every record held at least one keepable kernel. The number was
+> uninterpretable rather than wrong, and the report then diagnosed a skipped
+> filter that had in fact run. A count with no unit is not a count.
+
+Emit a fragment-level entry **even when it is zero** — an empty `excluded` list
+carries no unit, so it cannot distinguish a skipped Step 1 from a store where
+everything yielded something.
+
+The optional `note` records **how the count was taken**, never what was
+excluded. It ships in the payload, so a quoted excerpt there publishes exactly
+what the exclusion withheld; the assembler rejects a note that quotes a long
+passage, and caps it at 240 characters.
 
 ### The one risk, and how to hold it
 

@@ -12,7 +12,10 @@ submits — that is submit.py's job, after the person has seen the list.
 `classified` is a JSON array of objects, one per kept candidate:
     { "content_hash", "kind", "tier", "target", "statement", "rationale",
       "pam_component", "claimed_scope", "sharing", "still_true", "origin" }
-plus an optional sibling key "excluded": [{"reason","count"}].
+plus an optional sibling key "excluded": [{"reason","count","unit"}], where
+unit is "fragment" (claims discarded while decomposing) or "record" (whole
+candidates dropped). Count in fragments — that is the only unit at which
+container decomposition is visible.
 """
 
 import argparse
@@ -28,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 6
+RUBRIC_VERSION = 7
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
@@ -159,11 +162,40 @@ def validate(payload):
         if act.get("inclusion") not in ("always", "fileMatch", "manual"):
             errs.append(f"{w}: activation.inclusion invalid")
 
+    units = set()
     for e in payload.get("excluded", []):
         if e.get("reason") not in EXCL:
             errs.append(f"excluded: reason {e.get('reason')!r} invalid")
         if "content" in e or "body" in e or "statement" in e:
             errs.append("excluded: must carry counts and reasons only, never content")
+
+        # A count with no unit is not interpretable, and the ambiguity was not
+        # harmless: one run reported 0% excluded because it counted records,
+        # where every record yielded at least one kernel, and the report
+        # diagnosed a skipped filter that had in fact run.
+        u = e.get("unit")
+        if u not in ("record", "fragment"):
+            errs.append(f"excluded[{e.get('reason')}]: needs `unit` — 'record' for "
+                        f"whole candidates dropped before Step 2.5, 'fragment' for "
+                        f"claims discarded while decomposing a container")
+        else:
+            units.add(u)
+
+        note = e.get("note")
+        if isinstance(note, str):
+            if len(note) > 240:
+                errs.append(f"excluded[{e.get('reason')}]: note is {len(note)} chars "
+                            f"— cap is 240; it records how the count was taken, not "
+                            f"what was excluded")
+            # A note ships in the payload, so a quoted excerpt inside it
+            # publishes exactly what the exclusion was for.
+            if re.search(r"[\"'“‘][^\"'”’]{40,}", note):
+                errs.append(f"excluded[{e.get('reason')}]: note quotes a long passage "
+                            f"— that publishes the content the exclusion withheld")
+
+    if len(units) > 1:
+        errs.append(f"excluded: entries mix units {sorted(units)} — the total is then "
+                    f"meaningless. Count everything in one unit.")
 
     for r in payload.get("retired", []):
         if r.get("reason") not in ("superseded", "wrong", "unshared"):

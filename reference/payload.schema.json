@@ -98,12 +98,13 @@
     },
     "excluded": {
       "type": "array",
-      "description": "Counts and reasons only — never content. Visibility into the filter without ingesting what it filtered.",
+      "description": "Counts and reasons only — never content. Visibility into the filter without ingesting what it filtered. Every entry states its `unit`, because a count with no unit is not interpretable: Step 2.5 decomposes one record into several claims, so records-excluded and fragments-excluded are different numbers and only the fragment unit makes that work visible.",
       "items": {
         "type": "object",
         "required": [
           "reason",
-          "count"
+          "count",
+          "unit"
         ],
         "additionalProperties": false,
         "properties": {
@@ -124,7 +125,16 @@
             "minimum": 1
           },
           "note": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 240,
+            "description": "How the count was taken — NOT what was excluded. A note is still part of the payload, so quoting the excluded text here defeats the whole exclusion."
+          },
+          "unit": {
+            "enum": [
+              "record",
+              "fragment"
+            ],
+            "description": "What `count` counts. 'record' = whole candidates dropped before Step 2.5. 'fragment' = individual claims discarded while decomposing containers — the only unit at which Step 2.5's filtering is visible, since a record that yields one kernel out of nine fragments is not an excluded record. Mixing units across entries makes the total meaningless."
           }
         }
       }

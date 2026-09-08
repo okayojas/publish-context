@@ -327,26 +327,52 @@ def main():
         grand = len(kept) + ex_total
         for e in sorted(excl, key=lambda x: -x["count"]):
             print(f"  {e['count']:>3}  {e['reason']:<22} {bar(e['count'], grand or 1, 16)}")
-        print(f"  {len(kept):>3}  \033[1mkept\033[0m")
-        if grand:
-            pct = round(100 * ex_total / grand)
-            print(f"\n  \033[2m{pct}% of this store was excluded.\033[0m")
+        print(f"  {len(kept):>3}  \033[1mkept\033[0m  \033[2m(claims)\033[0m")
+
+        # The unit decides whether any of this is comparable. `kept` is always
+        # claims, so a percentage is only coherent when exclusions are counted
+        # in claims too. Counting records against claims was the ambiguity that
+        # made an earlier run read as 0% excluded.
+        units = {e.get("unit") for e in excl if e.get("unit")}
+        unit = units.pop() if len(units) == 1 else None
+        if not excl:
+            # The case that misled an earlier run: an empty list carries no unit,
+            # so it cannot distinguish "Step 1 never ran" from "every record held
+            # a kernel, so none was dropped whole". Say which question is open
+            # rather than picking an answer.
+            print("\n  \033[33mNothing is listed as excluded, and with no entries "
+                  "there is no `unit` to\n  read it against — so this does not "
+                  "distinguish a skipped Step 1 from a\n  store where every record "
+                  "yielded at least one kernel.\033[0m")
+            print("  \033[2mEmit an explicit fragment-level count, even a zero, to "
+                  "make the two\n  distinguishable.\033[0m")
+        elif len(units) > 1 or unit is None:
+            print("\n  \033[33mExclusion entries carry no single `unit` — the total "
+                  "is not\n  interpretable. Re-emit with one unit throughout.\033[0m")
+        elif unit == "fragment":
+            pct = round(100 * ex_total / (len(kept) + ex_total)) if (len(kept) + ex_total) else 0
+            print(f"\n  \033[2m{pct}% of the claims considered were discarded "
+                  f"(fragment-level).\033[0m")
             if pct >= 70:
-                print("  \033[33mMostly content the graph already holds — worth knowing "
-                      "before building further.\033[0m")
-            # A stronger signal than a high rate. The rubric runs derivability
-            # first and calls it "the highest-volume filter", so a store that
-            # excludes nothing has almost certainly not been through it — and
-            # the exclusion mix is the number report-only mode exists to
-            # produce, so a zero here means the run produced nothing useful.
+                print("  \033[33mMostly content the graph already holds — worth "
+                      "knowing before building further.\033[0m")
             if ex_total == 0:
-                print("  \033[33mNothing was excluded, which is not a clean store — "
-                      "it means the\n  derivability test did not run. Re-classify "
-                      "from rubric Step 1.\033[0m")
-            elif not any(e["reason"] == "derivable" for e in excl):
-                print("  \033[33mNo `derivable` exclusions. That filter should remove "
-                      "more than any\n  other; its absence usually means Step 1 was "
-                      "skipped.\033[0m")
+                print("  \033[33mNo fragments discarded at all. Step 1 removes more "
+                      "than any other\n  filter, so a zero here usually means it "
+                      "did not run.\033[0m")
+        elif unit == "record":
+            print(f"\n  \033[2m{ex_total} of {total} records dropped whole; the "
+                  f"other {total - ex_total} yielded\n  {len(kept)} claims between "
+                  f"them.\033[0m")
+            if ex_total == 0:
+                print("  \033[2mNo record was dropped whole. That is normal when "
+                      "every record holds at\n  least one kernel — it is not "
+                      "evidence either way about Step 1, which\n  filters "
+                      "fragments. Re-emit at fragment level to see that work.\033[0m")
+        if excl and not any(e["reason"] == "derivable" for e in excl):
+            print("  \033[33mNo `derivable` exclusions. That filter should remove "
+                  "more than any\n  other; its absence usually means Step 1 was "
+                  "skipped.\033[0m")
 
     if args.sample:
         rule(f"Structured output — first {min(args.sample, total)} record(s)")
