@@ -535,6 +535,54 @@ def scan_secrets(text):
     return hits
 
 
+# ------------------------------------------------------------ unsettled state
+#
+# Records that say, in their own words, that the matter is not closed. Detected
+# here for the same reason secrets are: asking a model to notice a status line
+# buried in several thousand characters is the judgement call the rubric refuses
+# to make elsewhere, and the cost of missing one is a proposal published as a
+# tier-1 constraint.
+#
+# Two real cases: "status: awaiting decision" on a competing architecture
+# position, and "awaiting boss sign-off as of 2026-07-14" on a plan whose four
+# claims published as constraints with no expiry.
+_PROVISIONAL = [
+    ("status_unsettled", re.compile(
+        r"(?im)^\W*\**\s*(?:status|state)\**\s*[:=]\s*\**\s*"
+        r"(?:draft|proposed?|pending|awaiting|open|tbd|under review|"
+        r"not (?:yet )?(?:decided|agreed|approved|signed))")),
+    ("awaiting",   re.compile(r"(?i)\bawaiting\s+(?:a\s+)?"
+                              r"(?:decision|approval|sign[- ]?off|review|"
+                              r"confirmation|boss|feedback)")),
+    ("blocked_on", re.compile(r"(?i)\bblocked\s+on\b")),
+    ("not_settled", re.compile(r"(?i)\bnot\s+yet\s+"
+                               r"(?:decided|agreed|approved|signed|final|"
+                               r"implemented|merged)\b")),
+    ("draft_marker", re.compile(r"(?m)^\W*(?:DRAFT|PROPOSAL|PROPOSED|TBD|WIP)\b")),
+    ("pending_ref", re.compile(r"(?i)\bpending\s+"
+                               r"(?:ADR|RFC|decision|approval|sign[- ]?off|review)")),
+    # A record that dates its own claim is a snapshot, not a standing fact.
+    ("self_dated",  re.compile(r"(?i)\bas of\s+\d{4}-\d{2}-\d{2}")),
+]
+
+
+def detect_provisional(text):
+    """[(kind, line)] where the record says its own subject is still open.
+
+    A signal for the classifier, not a verdict: `provisional` is a rubric
+    decision, and plenty of records mention a pending ticket while asserting
+    something settled. But the classifier is told, rather than expected to spot
+    it — which is the difference between a rule and a hope.
+    """
+    hits = []
+    for i, line in enumerate((text or "").splitlines(), start=1):
+        for kind, rx in _PROVISIONAL:
+            if rx.search(line):
+                hits.append({"kind": kind, "line": i})
+                break
+    return hits[:8]
+
+
 def _flatten(d, prefix=""):
     """Some tools nest (Claude Code puts `type` under `metadata:`), so match on
     both the dotted path and the leaf name."""
@@ -749,6 +797,7 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
             "asserted_at": ts,
             "timestamp_source": ts_src,
             "subjects_detected": detect_subjects(chunk),
+            "provisional_signals": detect_provisional(chunk),
             "unknown_frontmatter_keys": unknown,
             "documented_source": tool.get("documented", True),
         })

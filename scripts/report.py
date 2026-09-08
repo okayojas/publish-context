@@ -233,6 +233,32 @@ def main():
     print("  \033[2mwhether a record needs a scope depends on its kind — "
           "see the ceiling below\033[0m")
 
+    # ---- 5b. records that say their own subject is still open
+    #
+    # Paired with age, because the two together are the finding: a plan whose
+    # status line reads "awaiting sign-off as of 2026-07-14" and whose file is
+    # 54 days old published four tier-1 constraints with no expiry. Neither
+    # number alone would have caught it.
+    prov = [c for c in cands if c.get("provisional_signals")]
+    if prov:
+        rule("Unsettled — may be `provisional`")
+        gen = d.get("generated_at", "")
+        for c in sorted(prov, key=lambda x: x.get("asserted_at") or ""):
+            kinds = ", ".join(sorted({s["kind"] for s in c["provisional_signals"]}))
+            age = ""
+            try:
+                from datetime import datetime
+                a = datetime.fromisoformat(c["asserted_at"])
+                g = datetime.fromisoformat(gen)
+                age = f"  \033[2m· {(g - a).days}d old\033[0m"
+            except Exception:
+                pass
+            print(f"  \033[33m?\033[0m {Path(c['source_path']).name}{age}")
+            print(f"      {kinds}")
+        print("  \033[2ma signal, not a verdict — the rubric decides, but it is "
+              "told rather than\n  expected to notice. Check these before "
+              "classifying any of them tier 1.\033[0m")
+
     # ---- 6. timestamp provenance
     rule("Timestamps")
     ts = Counter(c.get("timestamp_source", "?") for c in cands)
@@ -308,6 +334,19 @@ def main():
             if pct >= 70:
                 print("  \033[33mMostly content the graph already holds — worth knowing "
                       "before building further.\033[0m")
+            # A stronger signal than a high rate. The rubric runs derivability
+            # first and calls it "the highest-volume filter", so a store that
+            # excludes nothing has almost certainly not been through it — and
+            # the exclusion mix is the number report-only mode exists to
+            # produce, so a zero here means the run produced nothing useful.
+            if ex_total == 0:
+                print("  \033[33mNothing was excluded, which is not a clean store — "
+                      "it means the\n  derivability test did not run. Re-classify "
+                      "from rubric Step 1.\033[0m")
+            elif not any(e["reason"] == "derivable" for e in excl):
+                print("  \033[33mNo `derivable` exclusions. That filter should remove "
+                      "more than any\n  other; its absence usually means Step 1 was "
+                      "skipped.\033[0m")
 
     if args.sample:
         rule(f"Structured output — first {min(args.sample, total)} record(s)")

@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **5**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **6**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -72,9 +72,29 @@ claim here costs more. Prefer the file's own wording.
 
 **`provisional`** — written down before it was agreed. A draft ticket, a proposal, an architecture position marked "awaiting decision", a plan with competing alternatives still open.
 
-The test is whether the record itself signals that the matter is open — "status: awaiting decision", "pending ADR-0012…0020", "draft", "proposed", "option A vs option B". If it does, exclude it however well-argued it is.
+**The collector does the looking.** A record with a non-empty `provisional_signals` array said so in its own words, and the array carries the kind and line number:
 
-> A real store held a third competing architecture position, explicitly `status: awaiting decision`, whose kernel classified cleanly as a `constraint`. Publishing it would have told every agent in the organization that this was the direction. `still_true` does not cover this — that field is about a claim going stale, not about one that was never settled.
+| Signal | What matched |
+|---|---|
+| `status_unsettled` | a `status:` / `state:` line reading draft, proposed, pending, awaiting, open, TBD |
+| `awaiting` | "awaiting a decision / approval / sign-off / review" |
+| `blocked_on` | "blocked on …" |
+| `not_settled` | "not yet decided / agreed / approved / signed" |
+| `draft_marker` | a line beginning DRAFT / PROPOSAL / TBD / WIP |
+| `pending_ref` | "pending ADR-…", "pending sign-off" |
+| `self_dated` | "as of YYYY-MM-DD" — a snapshot, not a standing fact |
+
+This is a **signal, not a verdict**: plenty of records mention a pending ticket while asserting something perfectly settled. Read the line it points at and decide. But a signal you were handed and ignored is a different failure from one you never saw, and **nothing carrying `status_unsettled`, `awaiting` or `draft_marker` should reach tier 1**.
+
+Two real stores, both missed:
+
+> A third competing architecture position, explicitly `status: awaiting decision` with ADRs still pending, whose kernel classified cleanly as a `constraint`. Publishing it would have told every agent in the organization that this was the direction.
+
+> A plan whose own status line read "awaiting boss sign-off as of 2026-07-14", in a file 54 days old. Its four claims published as tier-1 constraints with no expiry. Two signals fired on it and neither was consulted.
+
+`still_true` does not cover either case — that field is about a claim going stale, not about one that was never settled.
+
+Pair the signal with **age**. `asserted_at` and `timestamp_source` are on every record, and the report prints days-old beside each unsettled one. Old *plus* unsettled is the combination that matters; either alone is usually fine.
 
 **`machine_local`** — true, durable, not derivable from any repository, and about **one machine**. Local ports, container names, compose-project layout, which folder holds which checkout, this laptop's network quirks.
 

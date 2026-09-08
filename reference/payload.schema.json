@@ -422,6 +422,35 @@
             "null"
           ],
           "description": "Only for records read from a project instruction file (authority_signal 'project_root'). true = tracked in the repository, so the code connector already holds it and the content leans derivable. false = untracked or gitignored, therefore invisible to every other system — the case this source exists for. null = not a checkout, or git could not answer."
+        },
+        "provisional_signals": {
+          "type": "array",
+          "description": "Places the record says its own subject is still open, detected at collect time. A signal for the classifier, never a verdict — but nothing carrying status_unsettled, awaiting or draft_marker should reach tier 1.",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "line"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "status_unsettled",
+                  "awaiting",
+                  "blocked_on",
+                  "not_settled",
+                  "draft_marker",
+                  "pending_ref",
+                  "self_dated"
+                ]
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
         }
       }
     }
