@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **8**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **9**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -262,6 +262,29 @@ available.
 
 A hint graded `container` does not count. It names the folder someone keeps their
 code in, which is not a weaker scope — it is no scope.
+
+### When the claim really is platform-wide
+
+Some constraints have no narrower target. "One connector per external system,
+never one per bug or event type" is a rule about the construction path, not about
+any one service, and attaching it to whichever service the body mentioned would
+narrow it wrongly.
+
+For those, set **`scope_breadth: "platform_wide"`** and leave `claimed_scope`
+empty. That satisfies the scope requirement, because the point of the
+requirement is to stop *absence* from meaning two things — "applies to
+everything" and "we don't know" need opposite handling, so the broad case has to
+be stated rather than left as a gap.
+
+Two guards, and they exist because this is otherwise the cheapest possible
+escape from the scope rule:
+
+- It **cannot** coexist with a narrow scope. One or the other.
+- At tier 1 it **requires a rationale**. It is the broadest claim the payload can
+  carry, so it does not get to be the one without a reason attached.
+
+Use it only when the claim's own text asserts that breadth. If you are reaching
+for it because you could not find a scope, the honest move is still to ask.
 
 ### `rejected_alternative` · tier 1 · target `decision`
 An approach tried or considered and deliberately abandoned, **with the reason**. The single highest-value kind — nothing else in the organization records what was *not* done, and re-proposing a killed approach is the most expensive failure mode of a coding agent.

@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 8
+RUBRIC_VERSION = 9
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
@@ -146,7 +146,27 @@ def validate(payload):
         # the second — so they get different advice, not different verdicts.
         UNUSABLE = ("container", "encoded_path")
         usable_scopes = [s for s in scopes if s.get("quality") not in UNUSABLE]
-        if c.get("kind") in REQUIRES_SCOPE and not usable_scopes:
+
+        # An explicit breadth assertion satisfies the requirement. Absence of a
+        # scope is ambiguous between "applies to everything" and "we don't
+        # know", and those need opposite handling — so the broad case has to be
+        # stated rather than left as a gap. Guarded two ways: it cannot coexist
+        # with a narrow scope, and at tier 1 it needs a rationale, because
+        # otherwise it is the cheapest possible escape from Step 3's scope rule.
+        breadth = c.get("scope_breadth")
+        if breadth == "platform_wide":
+            if usable_scopes:
+                errs.append(f"{w}: scope_breadth 'platform_wide' with a narrow scope "
+                            f"({usable_scopes[0].get('text')!r}) — one or the other")
+            elif c.get("tier") == 1 and not (c.get("rationale") or "").strip():
+                errs.append(f"{w}: tier-1 platform_wide needs a rationale — it is the "
+                            f"broadest claim the payload can carry")
+        elif breadth is not None:
+            errs.append(f"{w}: scope_breadth {breadth!r} invalid — only "
+                        f"'platform_wide'")
+
+        if (c.get("kind") in REQUIRES_SCOPE and not usable_scopes
+                and breadth != "platform_wide"):
             grades = {s.get("quality") for s in scopes}
             if "encoded_path" in grades:
                 why = (" — its only scope is an encoded local path; run "
@@ -275,6 +295,7 @@ def main():
     # that invented a canonical_id or attached a confidence would be silently
     # corrected — safe, but it hides rubric drift from the person.
     input_errs = []
+    _seen_claims = set()
     for i, d in enumerate(decisions):
         w = f"classified[{i}]"
         if "confidence" in d:
@@ -285,6 +306,19 @@ def main():
                               f"location, never from the classifier")
         if "claim_index" in d and not (isinstance(d["claim_index"], int) and d["claim_index"] >= 0):
             input_errs.append(f"{w}: claim_index must be a non-negative integer")
+
+        # Two claims from one container that both omit claim_index both default
+        # to 0, so both mint the same memory_id — and landing dedups on it, which
+        # would drop the second silently. Decomposing containers into several
+        # claims is the normal path now (one store went 36 -> 50 claims by doing
+        # more of it), so this collision is live rather than theoretical.
+        _ck = (d.get("content_hash"), d.get("claim_index", 0))
+        if _ck in _seen_claims:
+            input_errs.append(f"{w}: another claim already uses claim_index "
+                              f"{_ck[1]} for this content_hash — they would mint the "
+                              f"same memory_id and landing would keep only one. "
+                              f"Number the claims from a container 0, 1, 2, …")
+        _seen_claims.add(_ck)
         if d.get("tier") not in (1, 2):
             input_errs.append(f"{w}: tier {d.get('tier')!r} — tier 3 is excluded "
                               f"locally and reported as a count, never classified")
@@ -389,6 +423,10 @@ def main():
             "rationale": d.get("rationale") or src.get("rationale"),
             "body": src["body"],
             "claimed_scope": scope,
+            # Carried only when set — an absent key means "has a target",
+            # which is the ordinary case and needs no marker.
+            **({"scope_breadth": d["scope_breadth"]}
+               if d.get("scope_breadth") else {}),
             "refs": src.get("refs", []),
             "activation": src.get("activation", {"inclusion": "always"}),
             "asserted_at": src["asserted_at"],
@@ -401,7 +439,10 @@ def main():
                 "tool": src["tool"],
                 "path": src["source_path"],
                 "documented": src.get("documented_source", True),
-                **({"claim_index": d["claim_index"]} if d.get("claim_index") else {}),
+                # `in`, not truthiness: an explicit claim_index 0 means "claim
+                # one of several", and dropping it made that indistinguishable
+                # from a single-claim record.
+                **({"claim_index": d["claim_index"]} if "claim_index" in d else {}),
             },
         })
 
