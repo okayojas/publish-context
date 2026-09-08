@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 7
+RUBRIC_VERSION = 8
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
@@ -299,6 +299,28 @@ def main():
         # deliberately refused to copy. Refuse the whole batch rather than drop
         # the record: a classifier reaching for a secret-bearing file is a rubric
         # failure worth surfacing, not something to silently absorb.
+        # A statement is one normative sentence, so a fragment is a defect the
+        # validator can see. Two real cases shipped as tier-1 constraints:
+        # "CI and TM data" and "Peripheralize metadata/ontology edges rather th".
+        # Terminal punctuation is NOT the test — plenty of good statements end
+        # without a period ("Its Keycloak runs on 8083, not 8080").
+        stmt = (d.get("statement") or "").strip()
+        if stmt:
+            last = re.split(r"[\s]+", stmt)[-1].strip(".,;:!?)\"'`]}")
+            _SHORT_WORDS = {"a", "an", "as", "at", "be", "by", "do", "go", "if",
+                            "in", "is", "it", "no", "of", "on", "or", "so", "to",
+                            "up", "us", "we", "ci", "cd", "ui", "id", "db", "pr",
+                            "os", "io", "ok", "vm", "ai", "ml", "qa"}
+            if (len(last) <= 3 and last.isalpha()
+                    and last.lower() not in _SHORT_WORDS):
+                input_errs.append(f"{w}: statement ends mid-word ({last!r}) — it was "
+                                  f"truncated somewhere upstream; re-read the source "
+                                  f"and write the whole sentence")
+            if len(stmt) < 20 or len(stmt.split()) < 3:
+                input_errs.append(f"{w}: statement is {len(stmt)} chars "
+                                  f"({len(stmt.split())} words) — too short to be a "
+                                  f"normative sentence: {stmt!r}")
+
         src_ = by_hash.get(d.get("content_hash"))
         if src_ and src_.get("secret_detected"):
             kinds_ = ", ".join(sorted({f['kind'] for f in src_.get('secret_findings', [])}))

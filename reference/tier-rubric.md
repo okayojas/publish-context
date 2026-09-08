@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **7**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **8**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -190,6 +190,32 @@ The optional `note` records **how the count was taken**, never what was
 excluded. It ships in the payload, so a quoted excerpt there publishes exactly
 what the exclusion withheld; the assembler rejects a note that quotes a long
 passage, and caps it at 240 characters.
+
+### A gate is not a fragment
+
+Decomposition assumes the fragments are independent. **A precondition is not.**
+If a container carries a gate — an approval that hasn't landed, a freeze, a
+"don't act on this until X" — that gate qualifies *every* kernel underneath it.
+Excluding it and keeping them inverts the record's own meaning.
+
+> A real plan was headed "Locked decisions (CEO/user-approved)" and closed with
+> "awaiting boss sign-off as of 2026-07-14 · NO code changes to any repo until
+> user confirms." The pass excluded the closing line as `session_local` and
+> published eleven tier-1 constraints from the body. The freeze was the one
+> sentence that told a reader what the other eleven were worth.
+
+Two contradictory claims *inside one record* is the signal. When you find one,
+the record does not decompose — resolve the contradiction first.
+
+**The rule: the gate travels with the kernels, or nothing ships.** In practice:
+
+1. If the gate can be checked, check it. Ask whether the sign-off happened.
+2. If it has landed, publish with `still_true: "yes"` and say who confirmed.
+3. If it hasn't, or nobody knows, **all** the kernels are `provisional` — not
+   just the gate.
+
+Never publish the kernels and drop the gate. That is the one decomposition that
+produces claims the source does not support, and it produces them at tier 1.
 
 ### The one risk, and how to hold it
 
