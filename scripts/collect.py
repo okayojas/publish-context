@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -638,8 +639,15 @@ def parse_file(path, tool, root, aliases, state, project_map=None):
             # encoded path to a real repository name. Verified by re-encoding a
             # candidate directory and comparing, never by decoding the hint.
             mapped_name = (project_map or {}).get(raw)
-            # A "CONFIRM:" value is a suggestion awaiting a human, not a mapping.
-            if isinstance(mapped_name, str) and mapped_name.startswith("CONFIRM:"):
+            # The map records {name, path, remote} since the collector needs the
+            # directory to read project instruction files; older maps hold a
+            # bare string.
+            if isinstance(mapped_name, dict):
+                mapped_name = mapped_name.get("name")
+            # A "CONFIRM:" value is a suggestion awaiting a human, not a
+            # mapping — including "CONFIRM-MERGE:", a proposed same-project
+            # merge that nobody has approved yet.
+            if isinstance(mapped_name, str) and mapped_name.startswith("CONFIRM"):
                 mapped_name = None
             if mapped_name:
                 scope_hints.append({
@@ -762,6 +770,55 @@ def enumerate_files(root, patterns, excludes):
     return seen
 
 
+def git_tracked(path, repo):
+    """True if this file is committed, False if not, None if git can't say.
+
+    The derivability signal for a project instruction file, and the reason this
+    stage exists. A committed CLAUDE.md is already in the repository, so the
+    code connector holds it with provenance and the rubric should treat it as
+    `derivable`. An untracked or ignored one is invisible to every other system
+    in the organization — which makes it the highest-value content the collector
+    can reach, and the only human-authored content it finds at all.
+    """
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "ls-files",
+                            "--error-unmatch", str(path)],
+                           capture_output=True, text=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return None
+
+
+def project_files(project_map, tool):
+    """[(file, project_dir, scope_name)] for instruction files at project roots.
+
+    Only from directories a *verified* match supplied. Instruction files live in
+    the working tree, which no tool root can see — the reason `asserted` was 0
+    across 75 real records on three machines. Reading them requires knowing
+    where the project is, and the only trustworthy answer is a re-encode match
+    that resolve-projects.py already verified. Never a filesystem sweep.
+    """
+    globs = tool.get("project_globs") or []
+    if not globs:
+        return []
+    out, seen = [], set()
+    for entry in (project_map or {}).values():
+        if not isinstance(entry, dict) or not entry.get("verified"):
+            continue
+        name, d = entry.get("name"), entry.get("path")
+        if not d or not isinstance(name, str) or name.startswith("CONFIRM"):
+            continue
+        base = Path(d)
+        if not base.is_dir():
+            continue
+        for pat in globs:
+            for f in sorted(base.glob(pat)):
+                if f.is_file() and f not in seen:
+                    seen.add(f)
+                    out.append((f, base, name))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=str(Path.home() / ".arionix" / "publish-state.json"))
@@ -805,13 +862,20 @@ def main():
         pats += settings_filenames(tool, root)
         files = enumerate_files(root, pats, tool.get("exclude", []))
 
+        # Instruction files at verified project roots. Listed separately because
+        # they are outside the tool root entirely, and a person reading the
+        # report should see that this stage reached into their working trees.
+        proj = project_files(project_map, tool)
+
         if args.dry_run:
             sources.append({
                 "tool": tool["tool"], "display": tool["display"], "status": "ok",
                 "resolved_root": str(root), "resolution": how,
                 "documented": tool.get("documented", True),
-                "counts": {"found": len(files), "changed": 0, "unchanged": 0},
-                "would_read": [_posix(f.relative_to(root)) for f in files],
+                "counts": {"found": len(files) + len(proj), "changed": 0,
+                           "unchanged": 0},
+                "would_read": ([_posix(f.relative_to(root)) for f in files]
+                               + [str(f) for f, _, _ in proj]),
                 "errors": [],
             })
             continue
@@ -831,6 +895,32 @@ def main():
             for r in recs or []:
                 candidates.append(r)
 
+        # Project instruction files. Parsed against the project directory as
+        # root so authorship resolves off `project_globs`, then overridden: these
+        # are what a team writes by hand, so authority is `asserted` and the
+        # signal names where that came from. The scope is the verified project
+        # name — the only place in the pipeline where a scope arrives already
+        # graded `name` without the resolver having to upgrade it.
+        proj_changed = 0
+        for f, base, scope_name in proj:
+            try:
+                recs, status = parse_file(f, tool, base, aliases, state, project_map)
+            except Exception as e:
+                errors.append({"path": str(f), "error": f"{type(e).__name__}: {e}"})
+                continue
+            if status == "unchanged":
+                unchanged += 1
+                continue
+            proj_changed += 1
+            tracked = git_tracked(f, base)
+            for r in recs or []:
+                r["authority"] = "asserted"
+                r["authority_signal"] = "project_root"
+                r["committed"] = tracked
+                r["scope_hints"] = [{"text": scope_name, "evidence": "project_map",
+                                     "quality": "name"}]
+                candidates.append(r)
+
         for pg in tool.get("patch_globs", []):
             for p in sorted(root.glob(pg)):
                 if p.is_file():
@@ -842,7 +932,9 @@ def main():
             "status": "ok" if not errors else "partial",
             "resolved_root": str(root), "resolution": how,
             "documented": tool.get("documented", True),
-            "counts": {"found": len(files), "changed": changed, "unchanged": unchanged},
+            "counts": {"found": len(files) + len(proj),
+                       "changed": changed + proj_changed, "unchanged": unchanged},
+            "project_files": len(proj),
             "errors": errors,
         })
 

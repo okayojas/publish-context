@@ -171,7 +171,8 @@
             "path",
             "filename",
             "section",
-            "default"
+            "default",
+            "project_root"
           ],
           "description": "Which of the four rules produced the answer. 'default' means unrecognized source, which always resolves to inferred."
         },
@@ -414,7 +415,14 @@
           }
         },
         "confidence": false,
-        "_confidence_note": "Deliberately forbidden. Asserted content is authoritative — running a classifier over text a person wrote and attaching a probability would be theatre. Everything else has confidence recomputed in code from structural signals."
+        "_confidence_note": "Deliberately forbidden. Asserted content is authoritative — running a classifier over text a person wrote and attaching a probability would be theatre. Everything else has confidence recomputed in code from structural signals.",
+        "committed": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Only for records read from a project instruction file (authority_signal 'project_root'). true = tracked in the repository, so the code connector already holds it and the content leans derivable. false = untracked or gitignored, therefore invisible to every other system — the case this source exists for. null = not a checkout, or git could not answer."
+        }
       }
     }
   }

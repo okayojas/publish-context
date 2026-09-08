@@ -40,6 +40,21 @@ Resolves each tool's root (environment variable → settings key → default roo
 enumerates against the manifest globs, skips unchanged files, and parses
 everything into `~/.arionix/candidates.json`.
 
+Two things happen here that are worth knowing about:
+
+**Credentials are quarantined before anything is copied.** A record that matches
+still appears — the person is entitled to know their memory holds a key — but its
+body, statement and rationale are dropped, so the secret's only home stays the
+original file. The report names the file and the finding kinds, never a value.
+Classification is already decided for these: rubric Step 0, `secret_bearing`.
+
+**Project instruction files are read from the working tree**, but only from
+project directories that `resolve-projects.py` has verified — never by sweeping.
+These are the only `asserted` records the collector finds, since a repo's
+CLAUDE.md or AGENTS.md sits nowhere near a tool root. Each carries `committed`:
+tracked means the code connector already has it, untracked means nothing else in
+the organization does. Run step 2.5 first or this stage finds nothing.
+
 Read the output summary. If a source you expected shows `absent`, check whether
 the tool relocates its root — the resolution step is reported per source.
 
@@ -76,8 +91,14 @@ It matches by **re-encoding** candidate checkouts and comparing, then reads each
 match's git remote. That is verification, not decoding — the encoded name can't
 be decoded, because separators and real hyphens are the same character.
 
-Matches are written to `~/.arionix/project-map.json` and picked up by every later
-`collect.py` run, which upgrades those hints to real names. Anything unmatched is
+Matches are written to `~/.arionix/project-map.json` with the verified path, and
+picked up by every later `collect.py` run, which upgrades those hints to real
+names and unlocks the project-instruction-file stage above.
+
+Two directories sharing a git remote are **the same project**: both hints map to
+one name, so both emit one scope string and the platform resolves them to one id.
+Where remotes can't settle it, the merge is only proposed — written with a
+`CONFIRM-MERGE:` prefix and treated as unset until a person strips it. Anything unmatched is
 printed as a stub for the person to complete by hand — one line each, once.
 
 Re-run `collect.py` afterwards so the upgraded hints land in the candidates.

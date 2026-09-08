@@ -215,6 +215,8 @@ def main():
     matched, unmatched, containers = [], [], []
     for enc, n in sorted(wanted.items(), key=lambda kv: -kv[1]):
         existing = mapping.get(enc)
+        if isinstance(existing, dict):
+            existing = existing.get("name")
         if isinstance(existing, str) and existing.startswith("CONFIRM:"):
             existing = None          # a suggestion the person has not accepted
         if existing:
@@ -233,7 +235,12 @@ def main():
             continue
         remote = git_remote(hit)
         name = remote or hit.name
-        mapping[enc] = name
+        # The path is recorded alongside the name, not instead of it: collect.py
+        # needs the directory to read the project's own instruction files
+        # (CLAUDE.md, AGENTS.md), which live in the working tree where no tool
+        # root can see them. Verified match only — never a guess, never a sweep.
+        mapping[enc] = {"name": name, "path": str(hit),
+                        "remote": remote, "verified": True}
         matched.append((enc, name, n, "matched " + str(hit)))
 
     for enc, name, n, how in matched:
@@ -253,6 +260,60 @@ def main():
                   f"{certainty}/ this is {name!r}")
         else:
             print(f"      {n} record(s) · no checkout found")
+
+    # -- same project, two directories --
+    #
+    # One store had 13 records under `…-Workspace-Arionix-Inc` and 6 under
+    # `…-Workspace-arionix-Arionix-Inc`: one project, moved, so two scope
+    # strings the resolver has no way to relate.
+    #
+    # A shared git remote settles it — that is verification, so both hints map
+    # to the same name and the platform resolves one string to one id. Where
+    # remotes are absent or differ, a merge is only *proposed*: written with a
+    # CONFIRM-MERGE: prefix, treated as unset until a person strips it, which is
+    # the same idiom already used for unmatched names.
+    by_remote = {}
+    for enc, v in mapping.items():
+        if isinstance(v, dict) and v.get("remote"):
+            by_remote.setdefault(v["remote"], []).append(enc)
+
+    merged = [(r, encs) for r, encs in by_remote.items() if len(encs) > 1]
+    for remote, encs in merged:
+        for enc in encs:
+            mapping[enc]["name"] = remote
+            mapping[enc]["merged_with"] = sorted(e for e in encs if e != enc)
+            mapping[enc]["merge_basis"] = "same_git_remote"
+
+    # Proposals: unmatched hints whose tail matches a name already mapped.
+    tails = {}
+    for enc, v in mapping.items():
+        nm = v.get("name") if isinstance(v, dict) else v
+        if isinstance(nm, str) and not nm.startswith("CONFIRM"):
+            tails[nm.split("/")[-1].lower()] = nm
+    proposals = []
+    for enc, n in unmatched:
+        tail, _ = suggest_name(enc)
+        hit_name = tails.get((tail or "").lower())
+        if hit_name:
+            mapping[enc] = {"name": f"CONFIRM-MERGE:{hit_name}", "path": None,
+                            "remote": None, "verified": False,
+                            "merge_basis": "same_tail_name"}
+            proposals.append((enc, hit_name, n))
+
+    if merged or proposals:
+        print()
+        for remote, encs in merged:
+            print(f"  = {remote}")
+            print(f"      {len(encs)} directories, same git remote — merged, "
+                  f"one scope")
+        for enc, name, n in proposals:
+            print(f"  ? {enc}")
+            print(f"      {n} record(s) · same directory name as {name!r} — "
+                  f"merge proposed, awaiting approval")
+        if proposals:
+            print("\n      A CONFIRM-MERGE: value is treated as unset. Strip the "
+                  "prefix to accept\n      the merge; delete the line to keep the "
+                  "scopes separate.")
 
     mp = Path(args.map)
     mp.parent.mkdir(parents=True, exist_ok=True)

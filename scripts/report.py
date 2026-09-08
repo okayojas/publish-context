@@ -152,6 +152,24 @@ def main():
         print(f"  \033[33m  {sig['default']} record(s) from an unrecognized source "
               f"→ defaulted to inferred\033[0m")
 
+    # Project instruction files, split by whether the repository already has
+    # them. The whole point of reaching into the working tree is the untracked
+    # half, so report the split rather than a total.
+    proj = [c for c in cands if c.get("authority_signal") == "project_root"]
+    if proj:
+        tracked = sum(1 for c in proj if c.get("committed") is True)
+        untracked = sum(1 for c in proj if c.get("committed") is False)
+        unknown_git = len(proj) - tracked - untracked
+        print(f"\n  {len(proj)} from project instruction files "
+              f"\033[2m(read from the working tree)\033[0m")
+        print(f"      tracked     {tracked:>3}  \033[2mthe repo has these — "
+              f"lean derivable\033[0m")
+        print(f"      untracked   {untracked:>3}  \033[2minvisible to every other "
+              f"system — the reason this source exists\033[0m")
+        if unknown_git:
+            print(f"      unknown     {unknown_git:>3}  \033[2mnot a checkout, or "
+                  f"git could not say\033[0m")
+
     # ---- 3. pre-labelled share
     rule("Source labelling")
     labelled = sum(1 for c in cands if c.get("native_type"))

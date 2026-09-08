@@ -40,6 +40,30 @@ This is the highest-volume filter and it runs before everything else. Ingesting 
 
 The pattern: **a fact about current state is derivable; the reasoning behind it is not.**
 
+### The `committed` field answers this directly
+
+A record from a project instruction file (`authority_signal: "project_root"` — a
+CLAUDE.md, AGENTS.md or equivalent read from the working tree) carries
+`committed`:
+
+| `committed` | What it means | Default |
+|---|---|---|
+| `true` | The file is tracked in the repository, so the code connector already holds it with provenance | Lean **`derivable`** |
+| `false` | Untracked or gitignored — invisible to every other system in the organization | **Keep.** The highest-value content the collector reaches |
+| `null` | Not a git checkout, or git couldn't answer | Judge on content as usual |
+
+`committed: false` is the case this stage exists for. A gitignored CLAUDE.local.md
+is hand-written, never reviewed, never shared, and holds exactly the local
+knowledge nothing else records.
+
+`committed: true` is not an automatic exclusion — a *committed* file may still
+carry reasoning the connector stores as prose but nothing extracts as a claim.
+But start from derivable and require a reason to keep it.
+
+These are also the only records with `authority: "asserted"`. That is a
+stronger epistemic footing than anything else in the store, so an overstated
+claim here costs more. Prefer the file's own wording.
+
 ---
 
 ## Step 2 — Four more exclusions, all mechanical
