@@ -98,16 +98,25 @@ a suggested name to accept or correct and an optional path:
   1.  arionix-weight-poc      7 record(s)   relative to Downloads/
   2.  CSE-112                 3 record(s)   relative to Documents/
 
-Which would you like to confirm?  e.g. 1,3-5  ·  all  ·  none
-  > 1
-     name  [enter to accept] >
-     path  [enter to skip · a path also reads this project's CLAUDE.md] > ~/code/weight-poc
+Which would you like to confirm?  enter = all  ·  1,3-5  ·  none
+  >
+  1. arionix-weight-poc  (7 record(s))
+     name  [enter to accept · s to skip] >
+     found /Users/ojas/code/arionix-weight-poc  (CLAUDE.md)
+     use it?  [enter = yes · n = no · or paste a different path] >
+     ok arionix-weight-poc  + will read its instruction files
 ```
 
-Supplying the path is worth it — it is what lets the collector read that
-project's CLAUDE.md, the only human-authored memory it ever finds. Skipping an
-entry keeps its encoded hint and leaves it flagged unresolvable, which is a real
-answer.
+**Holding enter is the intended path.** Blank confirms everything, accepts each
+suggested name, and accepts a found path — every value is shown before it is
+taken, and a wrong name yields an unresolvable scope rather than a wrong edge.
+
+The path is never typed. The resolver indexes directories that actually hold a
+CLAUDE.md / AGENTS.md and matches by name, folding case and separators, so
+`CSE_112` matches `CSE-112`. One match is offered for a yes; several are listed
+to pick from and enter takes none, because guessing between them is the one
+thing worth refusing. Skipping keeps the encoded hint and leaves it flagged
+unresolvable, which is a real answer.
 
 With no terminal (a subagent, a pipe, cron) it writes `CONFIRM:` entries into the
 map instead, for hand editing. `--no-interactive` forces that path.

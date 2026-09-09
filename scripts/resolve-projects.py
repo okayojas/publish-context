@@ -92,12 +92,70 @@ def _is_pending(v):
     return isinstance(name, str) and name.startswith("CONFIRM")
 
 
+# Instruction files worth having a path for. Kept in step with `project_globs`
+# in manifest.json — the point of a path is reading one of these, so a directory
+# with none of them is not worth suggesting.
+INSTRUCTION_FILES = ("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md",
+                     ".claude/CLAUDE.md", ".agents/AGENTS.md", ".windsurfrules")
+
+
+def _norm(name):
+    """Fold the ways the same project gets written: owner/repo, case, separators."""
+    name = str(name).rsplit("/", 1)[-1].lower()
+    return re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+
+
+def index_instruction_dirs(roots, max_depth):
+    """{normalized dir name: [paths]} for directories that hold an instruction file.
+
+    Asking someone to type a filesystem path guarantees an empty answer — people
+    hit enter, and rightly. But the point of a path is reading a CLAUDE.md, so
+    the set worth offering is small and findable: directories that actually have
+    one. Index those, then match by name.
+
+    Same bounds as find_repos, for the same reason — sweeping a person's whole
+    machine is a privacy problem before it is a slow one.
+    """
+    found = {}
+    for root in roots:
+        base = Path(os.path.expanduser(root))
+        if not base.is_dir():
+            continue
+        stack = [(base, 0)]
+        while stack:
+            d, depth = stack.pop()
+            try:
+                if any((d / f).is_file() for f in INSTRUCTION_FILES):
+                    found.setdefault(_norm(d.name), []).append(d)
+                if depth >= max_depth:
+                    continue
+                for child in d.iterdir():
+                    if (child.is_dir() and not child.is_symlink()
+                            and child.name not in SKIP
+                            and not child.name.startswith(".")):
+                        stack.append((child, depth + 1))
+            except (PermissionError, OSError):
+                continue
+    return found
+
+
+def which_files(d):
+    return [f for f in INSTRUCTION_FILES if (d / f).is_file()]
+
+
 def parse_selection(text, n):
-    """'1,3-5' / 'all' / 'none' -> a set of 1-based indices. None if unparseable."""
+    """'1,3-5' / 'all' / 'none' -> a set of 1-based indices. None if unparseable.
+
+    Blank means ALL, not none. People hold enter through a prompt, so the
+    default has to be the useful outcome — and it is safe here because each
+    name and path is then shown and confirmed individually, and a wrong name
+    yields an unresolvable scope rather than a wrong edge. Skipping stays
+    available, it just has to be typed.
+    """
     text = (text or "").strip().lower()
-    if text in ("all", "a", "*"):
+    if text in ("all", "a", "*", ""):
         return set(range(1, n + 1))
-    if text in ("none", "n", "q", "quit", "skip", ""):
+    if text in ("none", "no", "n", "q", "quit", "skip"):
         return set()
     out = set()
     for part in re.split(r"[,\s]+", text):
@@ -114,7 +172,7 @@ def parse_selection(text, n):
     return out
 
 
-def confirm_interactively(unmatched, mapping):
+def confirm_interactively(unmatched, mapping, instruction_dirs):
     """Walk the person through the pending entries in the terminal.
 
     Editing project-map.json by hand was the original flow and it was the wrong
@@ -139,11 +197,12 @@ def confirm_interactively(unmatched, mapping):
               f"\033[2m{where}\033[0m")
         print(f"      \033[2m{enc}\033[0m")
 
-    print("\nWhich would you like to confirm?  e.g. \033[1m1,3-5\033[0m  ·  "
-          "\033[1mall\033[0m  ·  \033[1mnone\033[0m")
-    print("\033[2mAnything you skip keeps its encoded hint and stays flagged "
-          "unresolvable,\nwhich is a real answer — a wrong scope is worse than an "
-          "absent one.\033[0m")
+    print("\nWhich would you like to confirm?  \033[1menter\033[0m = all  ·  "
+          "\033[1m1,3-5\033[0m  ·  \033[1mnone\033[0m")
+    print("\033[2mYou will see each name and path before it is accepted, and can "
+          "type 's' to\nskip one. Anything skipped keeps its encoded hint and "
+          "stays unresolvable,\nwhich is a real answer — a wrong scope is worse "
+          "than an absent one.\033[0m")
 
     try:
         sel = parse_selection(input("\n  > "), len(rows))
@@ -165,18 +224,51 @@ def confirm_interactively(unmatched, mapping):
         print(f"\n  {i}. \033[1m{name or '(no suggestion)'}\033[0m  "
               f"\033[2m({n} record(s))\033[0m")
         try:
-            typed = input(f"     name  [enter to accept{'' if name else ' — required'}] > ").strip()
+            typed = input(f"     name  [enter to accept · s to skip"
+                          f"{'' if name else ' · required'}] > ").strip()
+            if typed.lower() in ("s", "skip"):
+                print("     \033[2mskipped — stays unresolvable\033[0m")
+                continue
             final = typed or name
             if not final:
                 print("     skipped — no name given")
                 continue
-            path = input("     path  [enter to skip · a path also reads this "
-                         "project's CLAUDE.md] > ").strip()
+
+            # Offer the path rather than asking for one. Matched against
+            # directories that actually hold an instruction file, so every
+            # suggestion is one that would yield something.
+            path = None
+            hits = instruction_dirs.get(_norm(final), [])
+            if len(hits) == 1:
+                d = hits[0]
+                files = ", ".join(which_files(d))
+                print(f"     \033[2mfound {d}  ({files})\033[0m")
+                ans = input("     use it?  [enter = yes · n = no · or paste a "
+                            "different path] > ").strip()
+                if ans.lower() in ("", "y", "yes"):
+                    path = str(d)
+                elif ans.lower() not in ("n", "no"):
+                    path = os.path.expanduser(ans)
+            elif len(hits) > 1:
+                print(f"     \033[2m{len(hits)} directories match:\033[0m")
+                for j, d in enumerate(hits, start=1):
+                    print(f"       {j}) {d}  \033[2m({', '.join(which_files(d))})\033[0m")
+                ans = input("     which?  [number · enter = none · or paste a "
+                            "path] > ").strip()
+                if ans.isdigit() and 1 <= int(ans) <= len(hits):
+                    path = str(hits[int(ans) - 1])
+                elif ans:
+                    path = os.path.expanduser(ans)
+            else:
+                print(f"     \033[2mno directory named {_norm(final)!r} with a "
+                      f"CLAUDE.md under the scanned roots\033[0m")
+                ans = input("     path  [enter to skip] > ").strip()
+                if ans:
+                    path = os.path.expanduser(ans)
         except (EOFError, KeyboardInterrupt):
             print("\n  stopped — earlier answers kept")
             break
 
-        path = os.path.expanduser(path) if path else None
         if path and not Path(path).is_dir():
             print(f"     \033[33mnot a directory: {path} — name kept, path "
                   f"dropped\033[0m")
@@ -449,7 +541,12 @@ def main():
                    and sys.stdin.isatty() and sys.stdout.isatty())
     confirmed = 0
     if interactive:
-        confirmed = confirm_interactively(unmatched, mapping)
+        instruction_dirs = index_instruction_dirs(roots, args.depth)
+        n_dirs = sum(len(v) for v in instruction_dirs.values())
+        if n_dirs:
+            print(f"\n\033[2mscanned for instruction files — {n_dirs} "
+                  f"director{'y' if n_dirs == 1 else 'ies'} hold one\033[0m")
+        confirmed = confirm_interactively(unmatched, mapping, instruction_dirs)
 
     still_pending = [(e, n) for e, n in unmatched if _is_pending(mapping.get(e, ""))
                      or e not in mapping]
