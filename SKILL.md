@@ -91,6 +91,11 @@ It matches by **re-encoding** candidate checkouts and comparing, then reads each
 match's git remote. That is verification, not decoding — the encoded name can't
 be decoded, because separators and real hyphens are the same character.
 
+Anything it can't match is written into the map as a `CONFIRM:` entry for you to
+edit in place — accept the name by deleting the prefix, and add a `path` if you
+know where the checkout lives now. The path is worth supplying: it is what lets
+the collector read that project's CLAUDE.md.
+
 Matches are written to `~/.arionix/project-map.json` with the verified path, and
 picked up by every later `collect.py` run, which upgrades those hints to real
 names and unlocks the project-instruction-file stage above.

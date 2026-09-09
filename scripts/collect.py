@@ -852,8 +852,14 @@ def project_files(project_map, tool):
         return []
     out, seen = [], set()
     for entry in (project_map or {}).values():
-        if not isinstance(entry, dict) or not entry.get("verified"):
+        if not isinstance(entry, dict):
             continue
+        # The real requirement is a directory plus a name someone accepted —
+        # not `verified` specifically. A path filled in by hand is an assertion
+        # by the person whose machine it is, which is at least as good as a
+        # re-encode match, and gating on `verified` silently dropped those:
+        # confirming a project gave you the scope name and quietly lost its
+        # CLAUDE.md.
         name, d = entry.get("name"), entry.get("path")
         if not d or not isinstance(name, str) or name.startswith("CONFIRM"):
             continue

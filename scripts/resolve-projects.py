@@ -76,6 +76,17 @@ def suggest_name(encoded):
     return tail, parts[last]
 
 
+def _is_pending(v):
+    """A value the person has not accepted yet.
+
+    Both prefixes mean the same thing to every reader: CONFIRM: is a suggested
+    name for an unmatched directory, CONFIRM-MERGE: is a proposed same-project
+    merge. Neither is a mapping until the prefix is gone.
+    """
+    name = v.get("name") if isinstance(v, dict) else v
+    return isinstance(name, str) and name.startswith("CONFIRM")
+
+
 def holds_checkouts(d, limit=2):
     """How many *other* checkouts live under this directory, up to `limit`.
 
@@ -315,26 +326,46 @@ def main():
                   "prefix to accept\n      the merge; delete the line to keep the "
                   "scopes separate.")
 
-    mp = Path(args.map)
-    mp.parent.mkdir(parents=True, exist_ok=True)
-    mp.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nwrote {mp}  ({len(mapping)} mapped)")
+    # Pending entries go into the map so the person edits one file in place.
+    # Safe to write: every reader treats a CONFIRM-prefixed name as unset.
+    for enc, _ in unmatched:
+        if enc in mapping:
+            continue
+        nm, _anchor = suggest_name(enc)
+        mapping[enc] = {"name": f"CONFIRM:{nm}" if nm else "CONFIRM:owner/repo",
+                        "path": None, "remote": None, "verified": False}
 
     if unmatched:
         print("\nNo checkout matched these, which usually means the directory has "
               "been\nmoved or deleted — a tool keeps its project folder after the "
               "working\ndirectory is gone, so there is nothing left to match against.")
-        print("\nPrefilled with the directory name read off the tail of each path. "
-              "Confirm\nor correct, then re-run collect.py:\n")
-        stub = {}
-        for e, _ in unmatched:
-            name, certainty = suggest_name(e)
-            stub[e] = f"CONFIRM:{name}" if name else "owner/repo-or-service"
-        print(json.dumps(stub, indent=2, ensure_ascii=False))
-        print("\nA 'CONFIRM:' prefix is treated as unset — the value is a suggestion "
-              "for you,\nnot a mapping. Strip the prefix to accept it. Anything left "
-              "unmapped keeps\nits encoded hint and stays flagged unresolvable, which "
-              "is the honest outcome.")
+        print(f"Written into {args.map} as CONFIRM: entries so you can edit "
+              f"them in place\nrather than copying JSON back.")
+
+    mp = Path(args.map)
+    mp.parent.mkdir(parents=True, exist_ok=True)
+    mp.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"\nwrote {mp}  ({sum(1 for v in mapping.values() if not _is_pending(v))} "
+          f"mapped, {sum(1 for v in mapping.values() if _is_pending(v))} awaiting you)")
+
+    if unmatched:
+        print(f"""
+To confirm, open the file and edit each pending entry:
+
+  "{unmatched[0][0]}": {{
+    "name": "CONFIRM:{suggest_name(unmatched[0][0])[0] or 'owner/repo'}",
+    "path": null
+  }}
+
+  · Accept the name  — delete the "CONFIRM:" prefix. Correct it first if wrong.
+  · Add a path       — optional, and worth doing. With a path the collector can
+                       also read that project's CLAUDE.md / AGENTS.md, which is
+                       the only human-authored memory it ever finds. Without one
+                       you get the scope name and nothing else.
+  · Leave it alone   — the hint stays flagged unresolvable. That is a real
+                       answer, and better than a guess.
+
+Then re-run:  python3 scripts/collect.py --all""")
     return 0
 
 
