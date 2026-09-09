@@ -214,6 +214,28 @@ python3 scripts/report.py --classified ~/.arionix/classified.json
 run still validates the classification, so a rubric mistake surfaces here rather
 than at publication time.
 
+## Step 3.5 — Resolve scopes (only if step 4 blocks on them)
+
+```bash
+python3 scripts/resolve-scopes.py
+```
+
+`constraint`, `rejected_alternative`, `authority` and `vocabulary` need a
+target, and the classifier frequently cannot supply one — it sees a claim and
+the record it came from, and those disagree more often than not. A rule about
+the platform's connector layer and a rule about one repository get written down
+in the same file on the same afternoon.
+
+This asks, one keystroke per claim: the project the record was written in,
+platform-wide, a name you type, or skip. **There is no default on purpose.** For
+project names a default is safe because the suggestion is read off a path and
+the person can see whether it fits; here the choice is a judgement about what
+the claim means, and inheriting the source project would be wrong for exactly
+the broad claims that matter most.
+
+The answer is recorded in `evidence` — `source_project` when inherited,
+`asked_and_confirmed` when typed — so a reviewer downstream can tell which.
+
 ## Step 4 — Assemble and validate
 
 ```bash

@@ -207,9 +207,10 @@ def validate(payload):
                 why = ("Its only scope names a code parent, not a project. Ask "
                        "what it applies\n      to.")
             else:
-                why = ("Either name what it applies to, or — if it really has no "
-                       "narrower\n      target — set "
-                       "`scope_breadth: \"platform_wide\"` with a rationale.")
+                why = ("Run  python3 scripts/resolve-scopes.py  to answer this "
+                       "and any\n      others in one pass — it offers the project "
+                       "each claim was written\n      in, platform-wide, or a name "
+                       "you type.")
             errs.append(f"{w}:\n      kind {c['kind']!r} requires a scope and has "
                         f"none.\n      {why}")
 

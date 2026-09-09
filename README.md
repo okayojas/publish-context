@@ -168,6 +168,7 @@ the frontmatter *key names* differ, so every tool-specific fact lives in data:
 |---|---|
 | `collect.py` | Resolve → enumerate → diff → parse → tag |
 | `resolve-projects.py` | Match encoded project paths to real directories, by re-encoding |
+| `resolve-scopes.py` | Ask what a scope-requiring claim applies to, one keystroke each |
 | `report.py` | Report-only rendering |
 | `assemble.py` | Envelope, digest, local validation |
 | `submit.py` | Submit, then state and id write-back *(no endpoint yet)* |
