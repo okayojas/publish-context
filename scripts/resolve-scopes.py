@@ -45,7 +45,7 @@ def needs_scope(claim, src):
     """True when this claim would fail validation for want of a target."""
     if claim.get("kind") not in REQUIRES_SCOPE:
         return False
-    if claim.get("scope_breadth") == "platform_wide":
+    if claim.get("scope_breadth") == "enterprise":
         return False
     if "claimed_scope" in claim:
         scopes = claim["claimed_scope"] or []
@@ -60,6 +60,71 @@ def candidate_project(src):
         if h.get("quality") == "name" and h.get("text"):
             return h["text"]
     return None
+
+
+def _kind_for(level):
+    """A level implies what the named thing is, when nothing better is known."""
+    return {"application": "application", "application_group": "application_group",
+            "portfolio": "portfolio", "enterprise": "unknown"}.get(level, "unknown")
+
+
+def gather_candidates(claim, src, all_claims, by_hash):
+    """Everything in the batch that could plausibly be this claim's target.
+
+    The first version of this offered one option — the project the record was
+    written in — which is why the scopes for a real store had to be supplied by
+    hand instead. The information was there; the script just wasn't looking.
+
+    Four sources, and the order is the evidence ordering the rubric already
+    uses. A sibling claim naming a service is how a human reads it too: the
+    container said "the ladder is a pure function in arionix-weight-core" three
+    claims earlier, so that is what "the weight path" means here.
+    """
+    out, seen = [], set()
+
+    def add(text, kind, why):
+        if not text or text.lower() in seen:
+            return
+        seen.add(text.lower())
+        out.append({"text": text, "guess_kind": kind, "why": why})
+
+    # 1. named in this claim's own statement, matched against names already in
+    #    play elsewhere in the batch — the strongest evidence available
+    stmt = (claim.get("statement") or "").lower()
+    vocabulary = {}
+    for other in all_claims:
+        for s in other.get("claimed_scope") or []:
+            if s.get("text"):
+                vocabulary.setdefault(s["text"], other.get("guess_kind", "unknown"))
+    for name in sorted(vocabulary, key=len, reverse=True):
+        if name.lower() in stmt:
+            add(name, "unknown", "named in this claim, and used elsewhere in the batch")
+
+    # 2. scopes that sibling claims from the SAME record chose
+    same = [o for o in all_claims
+            if o is not claim and o.get("content_hash") == claim.get("content_hash")]
+    for o in same:
+        for s in o.get("claimed_scope") or []:
+            add(s.get("text"), s.get("guess_kind", "unknown"),
+                "another claim from this same record uses it")
+
+    # 3. references the collector extracted from this record, strongest zone first
+    for zone in ("statement", "rationale", "body"):
+        for r in (src or {}).get("refs") or []:
+            if isinstance(r, dict) and r.get("zone") == zone and r.get("kind") != "url":
+                add(r["text"], "ticket" if r.get("kind") == "ticket" else "repository",
+                    f"referenced in the {zone}")
+
+    # 4. the project the record was written in — a candidate, never a default
+    proj = candidate_project(src)
+    add(proj, "unknown", "the project this record was written in")
+
+    # 5. anything else already used in this batch, so a person can reuse a name
+    #    rather than retyping it and creating a near-duplicate
+    for name, kind in sorted(vocabulary.items()):
+        add(name, kind, "used elsewhere in this batch")
+
+    return out
 
 
 def main():
@@ -110,63 +175,101 @@ def main():
           "project a\nclaim was written in is often not what it is about.\033[0m")
 
     changed, skipped = 0, 0
+    LEVELS = [("a", "application"), ("g", "application_group"),
+              ("f", "portfolio"), ("e", "enterprise")]
+
     for n, (i, cl, src) in enumerate(pending, start=1):
-        proj = candidate_project(src)
         stmt = (cl.get("statement") or "").strip()
         where = Path(src["source_path"]).name if src else "?"
-        print(f"\n  \033[1m{n}/{len(pending)}\033[0m  {cl.get('kind')}")
-        print(f"  {stmt[:150]}")
-        print(f"  \033[2mfrom {where}\033[0m")
+        cands = gather_candidates(cl, src, claims, by_hash)
+
+        print(f"\n  \033[1m{n}/{len(pending)}\033[0m  {cl.get('kind')}"
+              f"  \033[2m· tier {cl.get('tier')} · from {where}\033[0m")
+        print(f"  {stmt[:160]}")
         print()
-        if proj:
-            print(f"       \033[1m1\033[0m  {proj}   \033[2m(the project it was "
-                  f"written in)\033[0m")
-        print(f"       \033[1mp\033[0m  platform-wide   \033[2m(no narrower "
-              f"target)\033[0m")
+        for j, c in enumerate(cands[:6], start=1):
+            print(f"       \033[1m{j}\033[0m  {c['text']:<30} \033[2m{c['why']}"
+                  f"\033[0m")
+        if not cands:
+            print("       \033[2mnothing in this batch names a plausible target"
+                  "\033[0m")
+        print(f"       \033[1me\033[0m  enterprise                     "
+              f"\033[2meverything; names no target\033[0m")
         print(f"       \033[1mt\033[0m  type a name")
-        print(f"       \033[1ms\033[0m  skip   \033[2m(stays blocked)\033[0m")
+        print(f"       \033[1ms\033[0m  skip                           "
+              f"\033[2mstays blocked\033[0m")
+
+        def ask_level(target):
+            """Which rung the named thing sits on. The point of the ladder is
+            that most claims are neither one app nor the whole company."""
+            print(f"       \033[2mwhat is {target!r}?\033[0m")
+            for k, name in LEVELS[:3]:
+                print(f"         \033[1m{k}\033[0m  {name.replace('_', ' ')}")
+            while True:
+                lv = input("       > ").strip().lower()
+                for k, name in LEVELS[:3]:
+                    if lv == k:
+                        return name
+                print("       \033[2ma, g or f\033[0m")
+
+        def need_rationale(level):
+            if cl.get("tier") != 1 or level not in ("portfolio", "enterprise"):
+                return True
+            if (cl.get("rationale") or "").strip():
+                return True
+            print(f"       \033[2ma tier-1 claim at {level} level needs a "
+                  f"rationale\033[0m")
+            rat = input("       why?  > ").strip()
+            if not rat:
+                print("       \033[33mno rationale — not set\033[0m")
+                return False
+            cl["rationale"] = rat
+            return True
 
         try:
             while True:
                 ans = input("     > ").strip().lower()
-                if ans == "1" and proj:
-                    cl["claimed_scope"] = [{"text": proj, "guess_kind": "unknown",
-                                            "evidence": "source_project"}]
-                    cl.pop("scope_breadth", None)
-                    print(f"     \033[32mok\033[0m {proj}")
-                    changed += 1
-                    break
-                if ans == "p":
-                    rat = (cl.get("rationale") or "").strip()
-                    if cl.get("tier") == 1 and not rat:
-                        print("     \033[2ma tier-1 platform-wide claim needs a "
-                              "rationale — it is the\n     broadest claim the "
-                              "payload can carry\033[0m")
-                        rat = input("     why?  > ").strip()
-                        if not rat:
-                            print("     \033[33mno rationale — not set\033[0m")
-                            continue
-                        cl["rationale"] = rat
-                    cl["claimed_scope"] = []
-                    cl["scope_breadth"] = "platform_wide"
-                    print("     \033[32mok\033[0m platform-wide")
-                    changed += 1
-                    break
-                if ans == "t":
-                    name = input("     name  > ").strip()
-                    if not name:
-                        continue
-                    cl["claimed_scope"] = [{"text": name, "guess_kind": "unknown",
-                                            "evidence": "asked_and_confirmed"}]
-                    cl.pop("scope_breadth", None)
-                    print(f"     \033[32mok\033[0m {name}")
-                    changed += 1
-                    break
+
                 if ans == "s":
                     print("     \033[2mskipped — stays blocked\033[0m")
                     skipped += 1
                     break
-                print("     \033[2m1, p, t or s\033[0m")
+
+                if ans == "e":
+                    if not need_rationale("enterprise"):
+                        continue
+                    cl["claimed_scope"] = []
+                    cl["scope_breadth"] = "enterprise"
+                    print("     \033[32mok\033[0m enterprise")
+                    changed += 1
+                    break
+
+                target, kind, evidence = None, "unknown", "asked_and_confirmed"
+                if ans == "t":
+                    target = input("     name  > ").strip()
+                    if not target:
+                        continue
+                elif ans.isdigit() and 1 <= int(ans) <= min(6, len(cands)):
+                    c = cands[int(ans) - 1]
+                    target, kind = c["text"], c["guess_kind"]
+                    evidence = ("source_project"
+                                if c["why"].startswith("the project") else
+                                "batch_reference")
+                else:
+                    print("     \033[2ma number, e, t or s\033[0m")
+                    continue
+
+                level = ask_level(target)
+                if not need_rationale(level):
+                    continue
+                cl["claimed_scope"] = [{"text": target,
+                                        "guess_kind": kind if kind != "unknown"
+                                        else _kind_for(level),
+                                        "evidence": evidence}]
+                cl["scope_breadth"] = level
+                print(f"     \033[32mok\033[0m {target}  \033[2m({level})\033[0m")
+                changed += 1
+                break
         except (EOFError, KeyboardInterrupt):
             print("\n  stopped — earlier answers kept")
             break

@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **9**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **10**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -263,76 +263,53 @@ available.
 A hint graded `container` does not count. It names the folder someone keeps their
 code in, which is not a weaker scope — it is no scope.
 
-### When the claim really is platform-wide
+### What level does it apply at?
 
-Some constraints have no narrower target. "One connector per external system,
-never one per bug or event type" is a rule about the construction path, not about
-any one service, and attaching it to whichever service the body mentioned would
-narrow it wrongly.
+Most claims are neither one application nor the whole company, and forcing that
+choice makes them wrong either way. `scope_breadth` names the rung, and
+`claimed_scope` names the thing on it:
 
-For those, set **`scope_breadth: "platform_wide"`** and leave `claimed_scope`
-empty. That satisfies the scope requirement, because the point of the
-requirement is to stop *absence* from meaning two things — "applies to
-everything" and "we don't know" need opposite handling, so the broad case has to
-be stated rather than left as a gap.
+| Level | `claimed_scope` | Example |
+|---|---|---|
+| `application` | the app, service or repository | "Its Keycloak runs on 8083, not 8080" |
+| `application_group` | the group | "Weight-engine scoring parameters are served at runtime" |
+| `portfolio` | the portfolio | "One connector per external system, never one per event type" |
+| `enterprise` | **empty** | "Never add a Claude attribution trailer to a commit" |
 
-Two guards, and they exist because this is otherwise the cheapest possible
-escape from the scope rule:
+`enterprise` is the only level that names nothing, because it means everything.
+Every narrower rung has to say what the thing on it is, or it asserts a breadth
+with no subject — and the assembler rejects both halves of that: an
+`enterprise` claim carrying a target, and a narrower one carrying none.
 
-- It **cannot** coexist with a narrow scope. One or the other.
-- At tier 1 it **requires a rationale**. It is the broadest claim the payload can
-  carry, so it does not get to be the one without a reason attached.
+**A tier-1 claim at `portfolio` or `enterprise` requires a rationale.** Those
+are the broadest assertions the payload can carry, so they don't get to be the
+ones without a reason attached.
 
-Use it only when the claim's own text asserts that breadth. If you are reaching
-for it because you could not find a scope, the honest move is still to ask.
+Reach for a broad rung when the claim's own text is about a shared mechanism —
+a construction path, a connector layer, a convention that spans repositories.
+Reach for `application` when it names one thing. If you're reaching upward
+because you couldn't find a target, that's the wrong reason: run
+`scripts/resolve-scopes.py`, which offers what the batch already names.
 
-### `rejected_alternative` · tier 1 · target `decision`
-An approach tried or considered and deliberately abandoned, **with the reason**. The single highest-value kind — nothing else in the organization records what was *not* done, and re-proposing a killed approach is the most expensive failure mode of a coding agent.
+### Where a scope comes from
 
-- ✅ "Don't use Redis for the SSO refresh lock — it dropped locks under reconnect storms; we moved to Postgres advisory locks."
-- ❌ "We use Postgres advisory locks." → `derivable`, the code says so.
+Don't invent one, and don't guess from the source path alone. The evidence
+already in the batch, strongest first:
 
-**Requires a rationale.** Without one it's just a prohibition — classify as `constraint` instead.
+1. **A name in this claim's own statement** that another claim in the batch also
+   uses — the author named it while making the claim, and the batch confirms the
+   spelling
+2. **A scope a sibling claim from the same record chose.** A container that says
+   "the ladder is a pure function in `arionix-weight-core`" has told you what
+   "the weight path" means three claims later
+3. **A ticket or ADR id** the collector extracted — already canonical in a
+   connected system, so the most *resolvable* thing available
+4. **The project the record was written in.** A candidate, never a default: a
+   rule about a connector layer and a rule about one repository get written down
+   in the same file on the same afternoon
 
-### `constraint` · tier 1 · target `decision`
-An undocumented rule about how this system must be worked on. Makes generated work wrong in ways a build-and-test gate cannot catch.
-
-- ✅ "Payments changes need a migration ticket linked before review."
-- ✅ "Don't run the backfill during business hours."
-- ❌ "Tests must pass before merge." → `derivable`, that's branch protection.
-
-### `authority` · tier 1 · target `decision`
-Who actually knows or decides something, where that differs from what the ownership files say.
-
-- ✅ "Ask Priya before touching auth-gateway, whatever CODEOWNERS says."
-- ❌ "The platform team owns auth-gateway." → `derivable`, CODEOWNERS says so.
-
-### `preference` · tier 1 · target `preference_rule`
-How work should be produced — style, sequencing, tooling. Shapes a draft rather than blocking it.
-
-- ✅ "Write the failing test first, then the fix."
-- ✅ "Keep PRs under ~400 lines; split rather than stack."
-- ❌ "Use 2-space indentation." → `derivable`, the formatter config says so.
-
-Preferences about *the publisher themselves* rather than about work — "I prefer terse explanations" — are `target: person_property`, still `kind: preference`.
-
-### `playbook` · tier 2 · target `document`
-A reusable procedure for a recurring situation. **Highest-risk kind**: it governs how work gets done rather than informing it, so it carries the strictest review downstream. Set `pam_component: procedural`.
-
-- ✅ "When the SSO tests fail, check token clock skew before anything else."
-- ❌ "How to run the test suite." → `derivable`, the README says so.
-
-### `vocabulary` · tier 2 · target `alias_proposal`
-A name people use that no system uses. Valuable on the query side, but a name is an identity claim, so it is strictly a proposal.
-
-- ✅ "'The checkout thing' means the storefront-api repo."
-- ✅ "We call the nightly job 'the reaper'."
-
-### `external_reference` · tier 2 · target `document`
-Where something authoritative lives, outside the connected systems. Doubles as a signal about which system to integrate next.
-
-- ✅ "The real payments design doc is in Notion, not Confluence."
-- ❌ A bare URL with no explanation of what it is. → `session_local`.
+`resolve-scopes.py` collects all four and asks. `evidence` records which one
+answered, so review downstream can tell an inherited scope from a stated one.
 
 ---
 

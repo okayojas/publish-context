@@ -274,6 +274,8 @@
                   "repository",
                   "service",
                   "application",
+                  "application_group",
+                  "portfolio",
                   "ticket",
                   "person",
                   "team",
@@ -464,9 +466,12 @@
         },
         "scope_breadth": {
           "enum": [
-            "platform_wide"
+            "application",
+            "application_group",
+            "portfolio",
+            "enterprise"
           ],
-          "description": "An explicit assertion that the claim has no narrower target — it constrains the platform as a whole. Satisfies the scope requirement for kinds that need one, because absence of scope is ambiguous between 'applies to everything' and 'we don't know', and those need opposite handling. Only for claims whose own text asserts that breadth; a tier-1 platform_wide claim additionally requires a rationale, since it is the broadest assertion the payload can carry."
+          "description": "The level a claim applies at. `claimed_scope` names the thing at that level, except for 'enterprise' which is everything and therefore names nothing. The ladder exists because most broad claims are neither one project nor the whole company: a rule about a construction path governs an application group or a portfolio, and forcing it to choose between 'this repo' and 'everything' makes it wrong either way. A tier-1 claim at portfolio or enterprise level requires a rationale."
         }
       }
     }

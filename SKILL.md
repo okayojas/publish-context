@@ -161,8 +161,15 @@ preference applies to the publisher's work generally, and attaching whichever
 repo happened to be mentioned in the body narrows it wrongly. Write `[]`
 deliberately rather than omitting the key, which falls back to collected hints.
 
-When a required scope has no usable evidence, **ask** — don't reach for a body
-mention or a path hint.
+Scope has two halves: **`scope_breadth`** names the level — `application`,
+`application_group`, `portfolio`, `enterprise` — and `claimed_scope` names the
+thing on it. Only `enterprise` names nothing. Most claims sit in the middle two
+rungs; forcing a choice between one repo and the whole company makes them wrong
+either way.
+
+Don't hand-resolve a missing scope. **Run `scripts/resolve-scopes.py`** (step
+3.5) — it gathers what the batch already names, including the scope a sibling
+claim from the same record chose, which is usually the answer.
 
 Watch for **containers** (rubric Step 2.5): a status or architecture summary is
 not one claim. It yields zero, one, or several, each with a `claim_index`, all
@@ -226,15 +233,35 @@ the record it came from, and those disagree more often than not. A rule about
 the platform's connector layer and a rule about one repository get written down
 in the same file on the same afternoon.
 
-This asks, one keystroke per claim: the project the record was written in,
-platform-wide, a name you type, or skip. **There is no default on purpose.** For
-project names a default is safe because the suggestion is read off a path and
-the person can see whether it fits; here the choice is a judgement about what
-the claim means, and inheriting the source project would be wrong for exactly
-the broad claims that matter most.
+It gathers every plausible target from the batch and asks, one keystroke each:
 
-The answer is recorded in `evidence` — `source_project` when inherited,
-`asked_and_confirmed` when typed — so a reviewer downstream can tell which.
+```
+  1/2  constraint  · tier 1 · from prod-integration-plan.md
+  Keep the kind table — do not replace it with SLM extraction in arionix-weight-core.
+
+       1  arionix-weight-core   named in this claim, and used elsewhere in the batch
+       2  AR-1195               referenced in the body
+       3  arionix-weight-poc    the project this record was written in
+       e  enterprise            everything; names no target
+       t  type a name
+       s  skip                  stays blocked
+     > 1
+       what is 'arionix-weight-core'?
+         a  application
+         g  application group
+         f  portfolio
+       > a
+     ok arionix-weight-core  (application)
+```
+
+**There is no default on purpose.** For project names a default is safe — the
+suggestion is read off a path and the person can see whether it fits. Here the
+choice is a judgement about what the claim means, and inheriting the source
+project would be wrong for exactly the broad claims that matter most.
+
+`evidence` records which source answered — `batch_reference`, `source_project`
+or `asked_and_confirmed` — so review downstream can tell an inherited scope from
+a stated one.
 
 ## Step 4 — Assemble and validate
 

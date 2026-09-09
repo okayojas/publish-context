@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 9
+RUBRIC_VERSION = 10
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
@@ -48,6 +48,9 @@ SHARING = ["personal", "team", "org"]
 STILL = ["yes", "no", "unknown"]
 ORIGIN = ["user_stated", "model_inferred", "derived_from_correction", "unknown"]
 PAM = ["factual", "procedural", "identity"]
+# Narrowest to broadest. Most real claims sit in the middle two — a rule about
+# a construction path is neither one repository nor the whole company.
+BREADTHS = ["application", "application_group", "portfolio", "enterprise"]
 # Why a record never entered the system. Counts and reasons only, never content.
 EXCL = ["derivable", "session_local", "person_sensitive", "unclassifiable",
         # A credential was detected at collect time. Distinct from
@@ -185,20 +188,31 @@ def validate(payload):
         # stated rather than left as a gap. Guarded two ways: it cannot coexist
         # with a narrow scope, and at tier 1 it needs a rationale, because
         # otherwise it is the cheapest possible escape from Step 3's scope rule.
+        # A level and a target are two halves of one statement. Only
+        # 'enterprise' means everything and so names nothing; every narrower
+        # level has to say what the thing at that level is, or it asserts a
+        # breadth without a subject.
         breadth = c.get("scope_breadth")
-        if breadth == "platform_wide":
+        if breadth is not None and breadth not in BREADTHS:
+            errs.append(f"{w}: scope_breadth {breadth!r} invalid — one of "
+                        f"{BREADTHS}")
+        elif breadth == "enterprise":
             if usable_scopes:
-                errs.append(f"{w}: scope_breadth 'platform_wide' with a narrow scope "
-                            f"({usable_scopes[0].get('text')!r}) — one or the other")
-            elif c.get("tier") == 1 and not (c.get("rationale") or "").strip():
-                errs.append(f"{w}: tier-1 platform_wide needs a rationale — it is the "
-                            f"broadest claim the payload can carry")
-        elif breadth is not None:
-            errs.append(f"{w}: scope_breadth {breadth!r} invalid — only "
-                        f"'platform_wide'")
+                errs.append(f"{w}: scope_breadth 'enterprise' with a named target "
+                            f"({usable_scopes[0].get('text')!r}) — enterprise means "
+                            f"everything, so it names nothing. Use a narrower level.")
+        elif breadth in ("portfolio", "application_group", "application"):
+            if not usable_scopes:
+                errs.append(f"{w}: scope_breadth {breadth!r} needs `claimed_scope` "
+                            f"to name the {breadth.replace('_', ' ')} it applies to")
+
+        if (c.get("tier") == 1 and breadth in ("portfolio", "enterprise")
+                and not (c.get("rationale") or "").strip()):
+            errs.append(f"{w}: a tier-1 claim at {breadth} level needs a rationale "
+                        f"— it is among the broadest the payload can carry")
 
         if (c.get("kind") in REQUIRES_SCOPE and not usable_scopes
-                and breadth != "platform_wide"):
+                and breadth != "enterprise"):
             grades = {s.get("quality") for s in scopes}
             if "encoded_path" in grades:
                 why = ("Its only scope is an encoded local path. Run "
@@ -208,9 +222,10 @@ def validate(payload):
                        "what it applies\n      to.")
             else:
                 why = ("Run  python3 scripts/resolve-scopes.py  to answer this "
-                       "and any\n      others in one pass — it offers the project "
-                       "each claim was written\n      in, platform-wide, or a name "
-                       "you type.")
+                       "and any others\n      in one pass. It offers what the batch "
+                       "already names — a sibling claim's\n      scope, a referenced "
+                       "ticket, the source project — then asks which rung:\n      "
+                       "application, application group, portfolio or enterprise.")
             errs.append(f"{w}:\n      kind {c['kind']!r} requires a scope and has "
                         f"none.\n      {why}")
 
@@ -276,6 +291,19 @@ def main():
 
     inter = read_json(args.candidates, "candidates file",
                       "Run the collector first:\n    python3 scripts/collect.py --all")
+
+    # The collector always emits these; a candidates file that lacks them was
+    # hand-made or truncated, and crashing on a KeyError three hundred lines
+    # later tells the person nothing about which.
+    _need = ("content_hash", "tool", "source_path", "authority",
+             "authority_signal", "asserted_at")
+    for _i, _c in enumerate(inter.get("candidates") or []):
+        _missing = [f for f in _need if f not in _c]
+        if _missing:
+            print(f"candidates[{_i}] is missing {', '.join(_missing)} — this file "
+                  f"was not written by collect.py, or was truncated.\n"
+                  f"Re-run:  python3 scripts/collect.py --all", file=sys.stderr)
+            raise SystemExit(1)
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
 
     # A candidates.json written before refs were position-graded holds bare
