@@ -370,12 +370,23 @@ def main():
         stmt = (d.get("statement") or "").strip()
         if stmt:
             last = re.split(r"[\s]+", stmt)[-1].strip(".,;:!?)\"'`]}")
+            # Two characters, not three. The first version allowed a list of
+            # known short words and rejected the rest, which cannot work: there
+            # are hundreds of three-letter words and acronyms, and it duly
+            # rejected valid statements ending in 'are', 'one' and 'RAG'. That
+            # is the same mistake this codebase keeps making — asserting
+            # something the data cannot support.
+            #
+            # So: conservative on purpose. A fragment of three or more
+            # characters gets through, and that is the right trade. Missing a
+            # truncation costs one bad statement a reviewer will notice; a false
+            # positive blocks an entire batch and teaches people to distrust the
+            # validator.
             _SHORT_WORDS = {"a", "an", "as", "at", "be", "by", "do", "go", "if",
-                            "in", "is", "it", "no", "of", "on", "or", "so", "to",
-                            "up", "us", "we", "ci", "cd", "ui", "id", "db", "pr",
-                            "os", "io", "ok", "vm", "ai", "ml", "qa"}
-            if (len(last) <= 3 and last.isalpha()
-                    and last.lower() not in _SHORT_WORDS):
+                            "in", "is", "it", "me", "my", "no", "of", "on", "or",
+                            "so", "to", "up", "us", "we", "ok"}
+            if (len(last) <= 2 and last.isalpha() and last.islower()
+                    and last not in _SHORT_WORDS):
                 input_errs.append(f"{w}: statement ends mid-word ({last!r}) — it was "
                                   f"truncated somewhere upstream; re-read the source "
                                   f"and write the whole sentence")
