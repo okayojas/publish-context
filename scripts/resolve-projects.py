@@ -116,7 +116,7 @@ def index_instruction_dirs(roots, max_depth):
     Same bounds as find_repos, for the same reason — sweeping a person's whole
     machine is a privacy problem before it is a slow one.
     """
-    found = {}
+    found, visited = {}, set()
     for root in roots:
         base = Path(os.path.expanduser(root))
         if not base.is_dir():
@@ -124,6 +124,17 @@ def index_instruction_dirs(roots, max_depth):
         stack = [(base, 0)]
         while stack:
             d, depth = stack.pop()
+            # DEFAULT_ROOTS overlap on purpose — '~' at depth 4 already reaches
+            # '~/Downloads/foo', and '~/Downloads' reaches 'foo' again. Without
+            # a resolved-path guard the same directory was offered twice in the
+            # pick list.
+            try:
+                key = d.resolve()
+            except (OSError, RuntimeError):
+                key = d
+            if key in visited:
+                continue
+            visited.add(key)
             try:
                 if any((d / f).is_file() for f in INSTRUCTION_FILES):
                     found.setdefault(_norm(d.name), []).append(d)
@@ -136,7 +147,7 @@ def index_instruction_dirs(roots, max_depth):
                         stack.append((child, depth + 1))
             except (PermissionError, OSError):
                 continue
-    return found
+    return {k: sorted(v) for k, v in found.items()}
 
 
 def which_files(d):
@@ -402,17 +413,24 @@ def git_remote(d):
 
 def find_repos(roots, max_depth):
     """Directories containing .git, within the bounded roots."""
-    seen, out = set(), []
+    # Same overlap guard as index_instruction_dirs: tracking only the roots
+    # deduped identical roots but not nested ones, so a checkout reachable from
+    # two roots was counted twice in "found N checkout(s)".
+    visited, out = set(), []
     for root in roots:
         base = Path(os.path.expanduser(root))
         if not base.is_dir():
             continue
-        if base in seen:
-            continue
-        seen.add(base)
         stack = [(base, 0)]
         while stack:
             d, depth = stack.pop()
+            try:
+                key = d.resolve()
+            except (OSError, RuntimeError):
+                key = d
+            if key in visited:
+                continue
+            visited.add(key)
             try:
                 if (d / ".git").exists():
                     out.append(d)
