@@ -134,7 +134,12 @@ def validate(payload):
         errs.append("envelope: envelope_digest malformed")
 
     for i, c in enumerate(payload.get("candidates", [])):
-        w = f"candidate[{i}] {c.get('memory_id', '?')}"
+        # The statement, not the minted id. An id and an index mean nothing to
+        # someone who has to go find the entry in a 50-item file, and this
+        # validator is now run by people who did not write it.
+        _s = (c.get("statement") or "").strip()
+        _label = (_s[:64] + "…") if len(_s) > 64 else (_s or "no statement")
+        w = f"candidate[{i}] {_label!r}"
         for f in ("memory_id", "content_hash", "authority", "kind", "tier",
                   "target", "statement", "body", "asserted_at", "sharing"):
             req(c, f, w)
@@ -196,14 +201,17 @@ def validate(payload):
                 and breadth != "platform_wide"):
             grades = {s.get("quality") for s in scopes}
             if "encoded_path" in grades:
-                why = (" — its only scope is an encoded local path; run "
-                       "resolve-projects.py, then re-collect")
+                why = ("Its only scope is an encoded local path. Run "
+                       "resolve-projects.py, then\n      re-collect.")
             elif "container" in grades:
-                why = (" — its only scope names a code parent, not a project; "
-                       "ask what it applies to")
+                why = ("Its only scope names a code parent, not a project. Ask "
+                       "what it applies\n      to.")
             else:
-                why = " — ask what it applies to rather than publishing it unscoped"
-            errs.append(f"{w}: kind {c['kind']!r} requires a scope and has none{why}")
+                why = ("Either name what it applies to, or — if it really has no "
+                       "narrower\n      target — set "
+                       "`scope_breadth: \"platform_wide\"` with a rationale.")
+            errs.append(f"{w}:\n      kind {c['kind']!r} requires a scope and has "
+                        f"none.\n      {why}")
 
         act = c.get("activation") or {}
         if act.get("inclusion") not in ("always", "fileMatch", "manual"):
@@ -231,9 +239,10 @@ def validate(payload):
         note = e.get("note")
         if isinstance(note, str):
             if len(note) > 240:
-                errs.append(f"excluded[{e.get('reason')}]: note is {len(note)} chars "
-                            f"— cap is 240; it records how the count was taken, not "
-                            f"what was excluded")
+                errs.append(f"excluded[{e.get('reason')}]: note is {len(note)} chars, "
+                            f"cap is 240.\n      A note records how the count was "
+                            f"taken, not what was excluded — e.g.\n      "
+                            f"\"counted while decomposing containers\".")
             # A note ships in the payload, so a quoted excerpt inside it
             # publishes exactly what the exclusion was for.
             if re.search(r"[\"'“‘][^\"'”’]{40,}", note):
