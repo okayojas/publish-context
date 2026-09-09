@@ -21,13 +21,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    # Single source of truth. Duplicating the set here would drift the moment
-    # one file is edited and the other isn't — which has already happened once
+    # Single source of truth. Duplicating these here would drift the moment one
+    # file is edited and the other isn't — which has already happened once
     # between the live skill directory and the repository.
-    from assemble import REQUIRES_SCOPE
+    from assemble import REQUIRES_SCOPE, read_json
 except Exception:                                    # pragma: no cover
     REQUIRES_SCOPE = {"rejected_alternative", "constraint", "authority",
                       "vocabulary"}
+
+    def read_json(path, what, hint=""):
+        return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _utf8_console():
@@ -88,7 +91,7 @@ def main():
               f"    python3 {Path(__file__).parent / 'collect.py'} --all\n", file=sys.stderr)
         return 1
 
-    d = json.loads(cpath.read_text(encoding="utf-8"))
+    d = read_json(cpath, "candidates file")
     cands = d["candidates"]
     total = len(cands)
 
@@ -293,7 +296,7 @@ def main():
 
     # ---- 8. kind distribution + exclusion mix (only with a classification pass)
     if args.classified and Path(args.classified).is_file():
-        raw = json.loads(Path(args.classified).read_text(encoding="utf-8"))
+        raw = read_json(args.classified, "classified file")
         kept = raw if isinstance(raw, list) else raw.get("candidates", [])
         excl = [] if isinstance(raw, list) else raw.get("excluded", [])
 

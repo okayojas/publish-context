@@ -86,6 +86,33 @@ def store_instance():
     return f"{user}.{host}"[:64]
 
 
+def read_json(path, what, hint=""):
+    """Read a JSON input, or explain what to do about it.
+
+    A traceback is an acceptable failure for a script one author runs and a bad
+    one for a skill other people install: "FileNotFoundError" does not tell
+    someone they ran the stages out of order.
+    """
+    p = Path(path)
+    if not p.is_file():
+        print(f"No {what} at {p}", file=sys.stderr)
+        if hint:
+            print(f"\n{hint}", file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"{what} at {p} is not valid JSON — line {e.lineno}, column "
+              f"{e.colno}:\n  {e.msg}", file=sys.stderr)
+        print("\nIf a model wrote this file, the usual causes are a trailing "
+              "comma or an\nunquoted key. Fix that line and re-run.",
+              file=sys.stderr)
+        raise SystemExit(1)
+    except OSError as e:
+        print(f"could not read {what} at {p}: {e}", file=sys.stderr)
+        raise SystemExit(1)
+
+
 # ------------------------------------------------------------------ validation
 
 def validate(payload):
@@ -237,7 +264,8 @@ def main():
     ap.add_argument("--state", default=str(Path.home() / ".arionix" / "publish-state.json"))
     args = ap.parse_args()
 
-    inter = json.loads(Path(args.candidates).read_text(encoding="utf-8"))
+    inter = read_json(args.candidates, "candidates file",
+                      "Run the collector first:\n    python3 scripts/collect.py --all")
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
 
     # A candidates.json written before refs were position-graded holds bare
@@ -285,7 +313,8 @@ def main():
         pending[k] = mint_id()
         return pending[k]
 
-    raw = json.loads(Path(args.classified).read_text(encoding="utf-8"))
+    raw = read_json(args.classified, "classified file",
+                    "This is the classification you write in step 3 — see\nreference/tier-rubric.md and the example in SKILL.md.")
     decisions = raw if isinstance(raw, list) else raw.get("candidates", [])
     excluded = [] if isinstance(raw, list) else raw.get("excluded", [])
     retired = [] if isinstance(raw, list) else raw.get("retired", [])

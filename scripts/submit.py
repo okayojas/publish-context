@@ -24,6 +24,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from assemble import read_json          # one implementation, not two
+
 
 def write_back_id(path, memory_id):
     """Persist the minted id in the source file's frontmatter.
@@ -84,8 +87,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    payload = json.loads(Path(args.payload).read_text(encoding="utf-8"))
-    inter = json.loads(Path(args.candidates).read_text(encoding="utf-8"))
+    payload = read_json(args.payload, "payload file",
+                        "Run the assembler first:\n    python3 scripts/assemble.py --classified ~/.arionix/classified.json")
+    inter = read_json(args.candidates, "candidates file",
+                      "Run the collector first:\n    python3 scripts/collect.py --all")
     by_hash = {"sha256:" + c["content_hash"]: c for c in inter["candidates"]}
 
     n = len(payload.get("candidates", []))

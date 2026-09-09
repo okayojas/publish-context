@@ -33,6 +33,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from assemble import read_json          # one implementation, not two
+
 # Directory names never worth descending into.
 SKIP = {".git", "node_modules", "__pycache__", ".venv", "venv", "env", ".tox",
         "dist", "build", "target", ".next", ".cache", "Library", "AppData",
@@ -494,12 +497,8 @@ def main():
                          "instead (automatic when there is no terminal)")
     args = ap.parse_args()
 
-    cpath = Path(args.candidates)
-    if not cpath.is_file():
-        print(f"No candidates file at {cpath} — run collect.py first", file=sys.stderr)
-        return 1
-
-    d = json.loads(cpath.read_text(encoding="utf-8"))
+    d = read_json(args.candidates, "candidates file",
+                  "Run the collector first:\n    python3 scripts/collect.py --all")
     wanted, container_hints = {}, {}
     for c in d["candidates"]:
         for h in c.get("scope_hints") or []:
