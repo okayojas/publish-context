@@ -14,10 +14,15 @@ verification, not an inference — and once matched, the directory's git remote
 gives a scope the resolver can actually use.
 
 Writes ~/.arionix/project-map.json, which collect.py reads on later runs.
-Unmatched entries are reported for one-line manual completion.
+
+Anything it cannot match is put to the person in the terminal: numbered, with a
+suggested name to accept or correct, and an optional path. Supplying the path
+also lets the collector read that project's CLAUDE.md / AGENTS.md. Without a
+terminal it falls back to writing CONFIRM: entries into the map for hand
+editing.
 
     python3 resolve-projects.py [--candidates PATH] [--map PATH]
-                               [--root DIR ...] [--depth N]
+                               [--root DIR ...] [--depth N] [--no-interactive]
 """
 
 import argparse
@@ -85,6 +90,104 @@ def _is_pending(v):
     """
     name = v.get("name") if isinstance(v, dict) else v
     return isinstance(name, str) and name.startswith("CONFIRM")
+
+
+def parse_selection(text, n):
+    """'1,3-5' / 'all' / 'none' -> a set of 1-based indices. None if unparseable."""
+    text = (text or "").strip().lower()
+    if text in ("all", "a", "*"):
+        return set(range(1, n + 1))
+    if text in ("none", "n", "q", "quit", "skip", ""):
+        return set()
+    out = set()
+    for part in re.split(r"[,\s]+", text):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", part)
+        if not m:
+            return None
+        lo = int(m.group(1))
+        hi = int(m.group(2) or lo)
+        if lo < 1 or hi > n or lo > hi:
+            return None
+        out.update(range(lo, hi + 1))
+    return out
+
+
+def confirm_interactively(unmatched, mapping):
+    """Walk the person through the pending entries in the terminal.
+
+    Editing project-map.json by hand was the original flow and it was the wrong
+    one twice over: the entries were printed but not written, so the file a
+    person was told to open did not contain them — and even once written, asking
+    someone to hand-edit JSON to answer "is this the right folder name" is a
+    detour out of the terminal for a yes.
+
+    Returns the number confirmed. Falls back to the file flow on anything
+    unexpected, because a half-finished interactive session must not leave the
+    map in a state nobody chose.
+    """
+    print(f"\n{len(unmatched)} project(s) need a name. No checkout matched them, "
+          f"which usually\nmeans the directory was moved or deleted — the tool keeps "
+          f"its project\nfolder after the working directory is gone.\n")
+    rows = []
+    for i, (enc, n) in enumerate(unmatched, start=1):
+        name, anchor = suggest_name(enc)
+        rows.append((enc, n, name, anchor))
+        where = f"relative to {anchor}/" if anchor else "no name in the path"
+        print(f"  {i}.  {name or '(unknown)':<28} {n:>3} record(s)   "
+              f"\033[2m{where}\033[0m")
+        print(f"      \033[2m{enc}\033[0m")
+
+    print("\nWhich would you like to confirm?  e.g. \033[1m1,3-5\033[0m  ·  "
+          "\033[1mall\033[0m  ·  \033[1mnone\033[0m")
+    print("\033[2mAnything you skip keeps its encoded hint and stays flagged "
+          "unresolvable,\nwhich is a real answer — a wrong scope is worse than an "
+          "absent one.\033[0m")
+
+    try:
+        sel = parse_selection(input("\n  > "), len(rows))
+        while sel is None:
+            sel = parse_selection(
+                input("  didn't parse that — numbers, ranges, 'all' or 'none' > "),
+                len(rows))
+    except (EOFError, KeyboardInterrupt):
+        print("\n  stopped — nothing confirmed")
+        return 0
+
+    if not sel:
+        print("  nothing confirmed")
+        return 0
+
+    done = 0
+    for i in sorted(sel):
+        enc, n, name, _anchor = rows[i - 1]
+        print(f"\n  {i}. \033[1m{name or '(no suggestion)'}\033[0m  "
+              f"\033[2m({n} record(s))\033[0m")
+        try:
+            typed = input(f"     name  [enter to accept{'' if name else ' — required'}] > ").strip()
+            final = typed or name
+            if not final:
+                print("     skipped — no name given")
+                continue
+            path = input("     path  [enter to skip · a path also reads this "
+                         "project's CLAUDE.md] > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  stopped — earlier answers kept")
+            break
+
+        path = os.path.expanduser(path) if path else None
+        if path and not Path(path).is_dir():
+            print(f"     \033[33mnot a directory: {path} — name kept, path "
+                  f"dropped\033[0m")
+            path = None
+
+        mapping[enc] = {"name": final, "path": path, "remote": None,
+                        "verified": False}
+        extra = "  + will read its instruction files" if path else ""
+        print(f"     \033[32mok\033[0m {final}{extra}")
+        done += 1
+    return done
 
 
 def holds_checkouts(d, limit=2):
@@ -169,6 +272,9 @@ def main():
     ap.add_argument("--root", action="append", default=None,
                     help="where to look for checkouts (repeatable)")
     ap.add_argument("--depth", type=int, default=4)
+    ap.add_argument("--no-interactive", action="store_true",
+                    help="never prompt; write CONFIRM: entries to the map "
+                         "instead (automatic when there is no terminal)")
     args = ap.parse_args()
 
     cpath = Path(args.candidates)
@@ -335,37 +441,51 @@ def main():
         mapping[enc] = {"name": f"CONFIRM:{nm}" if nm else "CONFIRM:owner/repo",
                         "path": None, "remote": None, "verified": False}
 
-    if unmatched:
-        print("\nNo checkout matched these, which usually means the directory has "
-              "been\nmoved or deleted — a tool keeps its project folder after the "
-              "working\ndirectory is gone, so there is nothing left to match against.")
-        print(f"Written into {args.map} as CONFIRM: entries so you can edit "
-              f"them in place\nrather than copying JSON back.")
+    # Interactive by default when there is a terminal. The file flow remains
+    # the fallback so this still works from a subagent, a pipe or cron — but it
+    # is the fallback, not the primary path: nobody should have to hand-edit
+    # JSON to answer "is this the right folder name".
+    interactive = (unmatched and not args.no_interactive
+                   and sys.stdin.isatty() and sys.stdout.isatty())
+    confirmed = 0
+    if interactive:
+        confirmed = confirm_interactively(unmatched, mapping)
+
+    still_pending = [(e, n) for e, n in unmatched if _is_pending(mapping.get(e, ""))
+                     or e not in mapping]
+    for enc, _ in still_pending:
+        if enc in mapping:
+            continue
+        nm, _a = suggest_name(enc)
+        mapping[enc] = {"name": f"CONFIRM:{nm}" if nm else "CONFIRM:owner/repo",
+                        "path": None, "remote": None, "verified": False}
 
     mp = Path(args.map)
     mp.parent.mkdir(parents=True, exist_ok=True)
     mp.write_text(json.dumps(mapping, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nwrote {mp}  ({sum(1 for v in mapping.values() if not _is_pending(v))} "
-          f"mapped, {sum(1 for v in mapping.values() if _is_pending(v))} awaiting you)")
 
-    if unmatched:
-        print(f"""
-To confirm, open the file and edit each pending entry:
+    n_mapped = sum(1 for v in mapping.values() if not _is_pending(v))
+    n_pending = sum(1 for v in mapping.values() if _is_pending(v))
+    print(f"\nwrote {mp}")
+    print(f"  {n_mapped} mapped" + (f"  ·  {n_pending} still pending"
+                                    if n_pending else ""))
 
-  "{unmatched[0][0]}": {{
-    "name": "CONFIRM:{suggest_name(unmatched[0][0])[0] or 'owner/repo'}",
-    "path": null
-  }}
+    if confirmed:
+        print(f"  {confirmed} confirmed just now")
 
-  · Accept the name  — delete the "CONFIRM:" prefix. Correct it first if wrong.
-  · Add a path       — optional, and worth doing. With a path the collector can
-                       also read that project's CLAUDE.md / AGENTS.md, which is
-                       the only human-authored memory it ever finds. Without one
-                       you get the scope name and nothing else.
-  · Leave it alone   — the hint stays flagged unresolvable. That is a real
-                       answer, and better than a guess.
+    if n_pending:
+        if interactive:
+            print(f"\n\033[2m{n_pending} left as CONFIRM: entries. Re-run this "
+                  f"script to be asked again,\nor edit {mp} directly — strip the "
+                  f"CONFIRM: prefix to accept a name.\033[0m")
+        else:
+            print(f"""
+No terminal, so nothing was asked. Pending entries are in the file as
+CONFIRM: values — strip the prefix to accept a name, or add a `path` to also
+read that project's CLAUDE.md. Re-run with a terminal to be prompted instead.""")
 
-Then re-run:  python3 scripts/collect.py --all""")
+    if confirmed or n_pending == 0:
+        print("\nNext:  python3 scripts/collect.py --all")
     return 0
 
 

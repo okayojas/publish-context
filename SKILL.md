@@ -91,10 +91,26 @@ It matches by **re-encoding** candidate checkouts and comparing, then reads each
 match's git remote. That is verification, not decoding — the encoded name can't
 be decoded, because separators and real hyphens are the same character.
 
-Anything it can't match is written into the map as a `CONFIRM:` entry for you to
-edit in place — accept the name by deleting the prefix, and add a `path` if you
-know where the checkout lives now. The path is worth supplying: it is what lets
-the collector read that project's CLAUDE.md.
+Anything it can't match it **asks you about in the terminal** — numbered, with
+a suggested name to accept or correct and an optional path:
+
+```
+  1.  arionix-weight-poc      7 record(s)   relative to Downloads/
+  2.  CSE-112                 3 record(s)   relative to Documents/
+
+Which would you like to confirm?  e.g. 1,3-5  ·  all  ·  none
+  > 1
+     name  [enter to accept] >
+     path  [enter to skip · a path also reads this project's CLAUDE.md] > ~/code/weight-poc
+```
+
+Supplying the path is worth it — it is what lets the collector read that
+project's CLAUDE.md, the only human-authored memory it ever finds. Skipping an
+entry keeps its encoded hint and leaves it flagged unresolvable, which is a real
+answer.
+
+With no terminal (a subagent, a pipe, cron) it writes `CONFIRM:` entries into the
+map instead, for hand editing. `--no-interactive` forces that path.
 
 Matches are written to `~/.arionix/project-map.json` with the verified path, and
 picked up by every later `collect.py` run, which upgrades those hints to real
