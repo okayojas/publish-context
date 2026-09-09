@@ -143,6 +143,56 @@ def which_files(d):
     return [f for f in INSTRUCTION_FILES if (d / f).is_file()]
 
 
+def clean_path(text):
+    """Make a pasted path usable.
+
+    Windows Explorer's "Copy as path" wraps the value in double quotes, and a
+    real report was `C:\\Users\\...` rejected as "not a directory" for exactly
+    that reason — the quotes were part of the string. Shells add their own
+    quoting when a path contains spaces, and a trailing separator survives a
+    double-click selection.
+    """
+    text = (text or "").strip()
+    for q in ('"', "'", "\u201c", "\u2018"):
+        if text.startswith(q):
+            text = text[1:]
+    for q in ('"', "'", "\u201d", "\u2019"):
+        if text.endswith(q):
+            text = text[:-1]
+    text = text.strip()
+    # A trailing slash or backslash is harmless to pathlib but strip it so the
+    # stored value matches what a later comparison would produce.
+    while len(text) > 3 and text[-1] in "/\\":
+        text = text[:-1]
+    return os.path.expanduser(os.path.expandvars(text)) if text else None
+
+
+def lookup_dirs(name, instruction_dirs):
+    """Directories matching a project name, tolerating a nested source path.
+
+    `suggest_name` returns everything after the anchor, so a memory written in
+    `Downloads/arionix-weight-theory/arionix-weight-poc` yields the whole
+    flattened tail `arionix-weight-theory-arionix-weight-poc` — which matches no
+    directory, because the directory is named after the last segment only.
+    A real store hit exactly this.
+
+    So: try the full name, then progressively shorter suffixes at token
+    boundaries. Two-token minimum, because a one-token suffix like 'poc' or
+    'api' would collide with anything.
+    """
+    key = _norm(name)
+    if key in instruction_dirs:
+        return instruction_dirs[key], key
+    parts = key.split("-")
+    for start in range(1, max(1, len(parts) - 1)):
+        cand = "-".join(parts[start:])
+        if len(cand.split("-")) < 2:
+            break
+        if cand in instruction_dirs:
+            return instruction_dirs[cand], cand
+    return [], key
+
+
 def parse_selection(text, n):
     """'1,3-5' / 'all' / 'none' -> a set of 1-based indices. None if unparseable.
 
@@ -238,17 +288,30 @@ def confirm_interactively(unmatched, mapping, instruction_dirs):
             # directories that actually hold an instruction file, so every
             # suggestion is one that would yield something.
             path = None
-            hits = instruction_dirs.get(_norm(final), [])
+            hits, matched_key = lookup_dirs(final, instruction_dirs)
             if len(hits) == 1:
                 d = hits[0]
                 files = ", ".join(which_files(d))
                 print(f"     \033[2mfound {d}  ({files})\033[0m")
-                ans = input("     use it?  [enter = yes · n = no · or paste a "
-                            "different path] > ").strip()
+                # A suffix match means the source path was nested, so the name
+                # carries folder names above the project — 'weight-theory-...'
+                # in front of the real 'arionix-weight-poc'. The folder's own
+                # basename is the better scope string: it is what the project is
+                # actually called, and the longer form is unlikely to resolve to
+                # anything. Offered in the same keystroke rather than a third
+                # prompt.
+                rename = _norm(d.name) != _norm(final)
+                q = ("     use it, and name the project "
+                     f"{d.name!r}?  [enter = yes · n = no] > " if rename
+                     else "     use it?  [enter = yes · n = no · or paste a "
+                          "different path] > ")
+                ans = input(q).strip()
                 if ans.lower() in ("", "y", "yes"):
                     path = str(d)
+                    if rename:
+                        final = d.name
                 elif ans.lower() not in ("n", "no"):
-                    path = os.path.expanduser(ans)
+                    path = clean_path(ans)
             elif len(hits) > 1:
                 print(f"     \033[2m{len(hits)} directories match:\033[0m")
                 for j, d in enumerate(hits, start=1):
@@ -258,21 +321,29 @@ def confirm_interactively(unmatched, mapping, instruction_dirs):
                 if ans.isdigit() and 1 <= int(ans) <= len(hits):
                     path = str(hits[int(ans) - 1])
                 elif ans:
-                    path = os.path.expanduser(ans)
+                    path = clean_path(ans)
             else:
-                print(f"     \033[2mno directory named {_norm(final)!r} with a "
+                print(f"     \033[2mno directory named {matched_key!r} with a "
                       f"CLAUDE.md under the scanned roots\033[0m")
-                ans = input("     path  [enter to skip] > ").strip()
-                if ans:
-                    path = os.path.expanduser(ans)
+                ans = input("     path  [enter to skip · paste one, quotes ok] > ")
+                if ans.strip():
+                    path = clean_path(ans)
         except (EOFError, KeyboardInterrupt):
             print("\n  stopped — earlier answers kept")
             break
 
         if path and not Path(path).is_dir():
-            print(f"     \033[33mnot a directory: {path} — name kept, path "
-                  f"dropped\033[0m")
+            why = ("it is a file, not a directory" if Path(path).exists()
+                   else "nothing exists at that path")
+            print(f"     \033[33mpath refused — {why}\033[0m")
+            print(f"     \033[2mread as: {path!r}\033[0m")
+            print(f"     \033[2mname kept; re-run to try the path again\033[0m")
             path = None
+        elif path:
+            found = which_files(Path(path))
+            if not found:
+                print(f"     \033[2mno instruction file there — path stored "
+                      f"anyway, harmless\033[0m")
 
         mapping[enc] = {"name": final, "path": path, "remote": None,
                         "verified": False}
@@ -357,6 +428,42 @@ def find_repos(roots, max_depth):
     return out
 
 
+def print_instruction_status(mapping):
+    """Which mapped projects will actually yield instruction files.
+
+    Printed every run, because "one CLAUDE.md was found and none of the others"
+    is otherwise indistinguishable from a bug — and the answer is usually that
+    only one project has a path.
+    """
+    resolved = [(k, v) for k, v in mapping.items()
+                if isinstance(v, dict) and not _is_pending(v)]
+    if not resolved:
+        return
+    print("\n\033[1mInstruction files per project\033[0m")
+    with_files = 0
+    for _k, v in sorted(resolved, key=lambda kv: str(kv[1].get("name"))):
+        nm, pth = v.get("name"), v.get("path")
+        if not pth:
+            print(f"  \033[2m·\033[0m {nm:<34} \033[2mno path — scope only\033[0m")
+        elif not Path(pth).is_dir():
+            print(f"  \033[33m!\033[0m {nm:<34} \033[33mpath no longer exists"
+                  f"\033[0m")
+        else:
+            files = which_files(Path(pth))
+            if files:
+                with_files += 1
+                print(f"  \033[32m+\033[0m {nm:<34} {', '.join(files)}")
+            else:
+                print(f"  \033[2m·\033[0m {nm:<34} \033[2mpath set, no "
+                      f"instruction file there\033[0m")
+    print(f"\n  \033[2m{with_files} of {len(resolved)} project(s) will contribute "
+          f"human-authored records.\033[0m")
+    if with_files < len(resolved):
+        print(f"  \033[2mThe rest give scope only, which is the normal outcome — "
+              f"most projects\n  have no CLAUDE.md, and a deleted directory has no "
+              f"path to give.\033[0m")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidates", default=str(Path.home() / ".arionix" / "candidates.json"))
@@ -394,8 +501,16 @@ def main():
         print("      scope for these has to come from the record text or from "
               "asking\n")
 
+    mapping = {}
+    if Path(args.map).is_file():
+        try:
+            mapping = json.loads(Path(args.map).read_text(encoding="utf-8"))
+        except Exception:
+            mapping = {}
+
     if not wanted:
         print("No encoded-path hints to resolve.")
+        print_instruction_status(mapping)
         return 0
 
     print(f"{len(wanted)} encoded project path(s) to resolve\n")
@@ -413,13 +528,6 @@ def main():
         # /private/tmp, which encodes to a different string entirely.
         for variant in {r, r.resolve()}:
             index.setdefault(encode_path(variant).lower(), r)
-
-    mapping = {}
-    if Path(args.map).is_file():
-        try:
-            mapping = json.loads(Path(args.map).read_text(encoding="utf-8"))
-        except Exception:
-            mapping = {}
 
     matched, unmatched, containers = [], [], []
     for enc, n in sorted(wanted.items(), key=lambda kv: -kv[1]):
@@ -580,6 +688,8 @@ def main():
 No terminal, so nothing was asked. Pending entries are in the file as
 CONFIRM: values — strip the prefix to accept a name, or add a `path` to also
 read that project's CLAUDE.md. Re-run with a terminal to be prompted instead.""")
+
+    print_instruction_status(mapping)
 
     if confirmed or n_pending == 0:
         print("\nNext:  python3 scripts/collect.py --all")
