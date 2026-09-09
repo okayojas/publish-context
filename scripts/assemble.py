@@ -215,19 +215,15 @@ def validate(payload):
                 and breadth != "enterprise"):
             grades = {s.get("quality") for s in scopes}
             if "encoded_path" in grades:
-                why = ("Its only scope is an encoded local path. Run "
-                       "resolve-projects.py, then\n      re-collect.")
+                tag = "[encoded-path scope]"
             elif "container" in grades:
-                why = ("Its only scope names a code parent, not a project. Ask "
-                       "what it applies\n      to.")
+                tag = "[container scope]"
             else:
-                why = ("Run  python3 scripts/resolve-scopes.py  to answer this "
-                       "and any others\n      in one pass. It offers what the batch "
-                       "already names — a sibling claim's\n      scope, a referenced "
-                       "ticket, the source project — then asks which rung:\n      "
-                       "application, application group, portfolio or enterprise.")
-            errs.append(f"{w}:\n      kind {c['kind']!r} requires a scope and has "
-                        f"none.\n      {why}")
+                tag = "[no scope]"
+            # One line each. The remedy is identical for every one of these and
+            # printing it per error buried the only part that differs — which
+            # claim. It goes in a footnote instead.
+            errs.append(f"{w}\n      {c['kind']} needs a target  {tag}")
 
         act = c.get("activation") or {}
         if act.get("inclusion") not in ("always", "fileMatch", "manual"):
@@ -246,24 +242,20 @@ def validate(payload):
         # diagnosed a skipped filter that had in fact run.
         u = e.get("unit")
         if u not in ("record", "fragment"):
-            errs.append(f"excluded[{e.get('reason')}]: needs `unit` — 'record' for "
-                        f"whole candidates dropped before Step 2.5, 'fragment' for "
-                        f"claims discarded while decomposing a container")
+            errs.append(f"excluded[{e.get('reason')}] needs `unit`  [unit]")
         else:
             units.add(u)
 
         note = e.get("note")
         if isinstance(note, str):
             if len(note) > 240:
-                errs.append(f"excluded[{e.get('reason')}]: note is {len(note)} chars, "
-                            f"cap is 240.\n      A note records how the count was "
-                            f"taken, not what was excluded — e.g.\n      "
-                            f"\"counted while decomposing containers\".")
+                errs.append(f"excluded[{e.get('reason')}] note is {len(note)} chars, "
+                            f"cap is 240  [note]")
             # A note ships in the payload, so a quoted excerpt inside it
             # publishes exactly what the exclusion was for.
             if re.search(r"[\"'“‘][^\"'”’]{40,}", note):
-                errs.append(f"excluded[{e.get('reason')}]: note quotes a long passage "
-                            f"— that publishes the content the exclusion withheld")
+                errs.append(f"excluded[{e.get('reason')}] note quotes a long passage "
+                            f" [note]")
 
     if len(units) > 1:
         errs.append(f"excluded: entries mix units {sorted(units)} — the total is then "
@@ -550,8 +542,40 @@ def main():
 
     if errs:
         print("VALIDATION FAILED — nothing written\n", file=sys.stderr)
+        _joined = "\n".join(errs)
+        _notes = []
+        if "[no scope]" in _joined:
+            _notes.append(
+                "[no scope]  Run  python3 scripts/resolve-scopes.py  to answer "
+                "these in one pass.\n            It offers what the batch already "
+                "names — a sibling claim's scope, a\n            referenced "
+                "ticket, the source project — then asks which rung:\n            "
+                "application, application group, portfolio or enterprise.")
+        if "[encoded-path scope]" in _joined:
+            _notes.append(
+                "[encoded-path scope]  The only scope is a flattened local path. "
+                "Run\n            resolve-projects.py, then re-collect.")
+        if "[unit]" in _joined:
+            _notes.append(
+                "[unit]  Every excluded entry states what `count` counts, and all "
+                "must agree:\n            \"fragment\" for claims discarded while "
+                "decomposing a container — use\n            this — or \"record\" "
+                "for whole candidates dropped before Step 2.5.")
+        if "[note]" in _joined:
+            _notes.append(
+                "[note]  A note records how the count was taken, not what was "
+                "excluded — it\n            ships in the payload, so an excerpt "
+                "there publishes what the exclusion\n            withheld. Cap 240 "
+                "chars. e.g. \"counted while decomposing containers\".")
+        if "[container scope]" in _joined:
+            _notes.append(
+                "[container scope]  The only scope names a folder holding several "
+                "checkouts,\n            so there is no correct answer to resolve. "
+                "Use resolve-scopes.py.")
         for e in errs:
             print(f"  · {e}", file=sys.stderr)
+        for note in _notes:
+            print(f"\n  {note}", file=sys.stderr)
         return 1
 
     out = Path(args.out)
