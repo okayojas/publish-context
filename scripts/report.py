@@ -169,6 +169,23 @@ def main():
         if unknown_git:
             print(f"      unknown     {unknown_git:>3}  \033[2mnot a checkout, or "
                   f"git could not say\033[0m")
+    else:
+        # Nothing from the working tree. Two very different reasons, and saying
+        # only "0" conflates them: no project had a confirmed path, versus paths
+        # were checked and those projects have no instruction file.
+        roots = sum(s.get("project_roots", 0) for s in d["sources"])
+        looked = [s for s in d["sources"] if s.get("project_globs_count")
+                  or s.get("project_roots") is not None]
+        if roots:
+            print(f"\n  \033[2m0 from project instruction files — {roots} project "
+                  f"path(s) were checked and\n  none has a CLAUDE.md / AGENTS.md. "
+                  f"Nothing more to do here.\033[0m")
+        elif looked:
+            print(f"\n  \033[33m0 from project instruction files — no project has a "
+                  f"confirmed path.\033[0m")
+            print(f"  \033[2mRe-run resolve-projects.py and supply a path when it "
+                  f"asks. That is the only\n  way this pipeline reaches "
+                  f"human-authored memory, which is why `asserted` is 0.\033[0m")
 
     # ---- 3. pre-labelled share
     rule("Source labelling")

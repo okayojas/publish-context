@@ -849,8 +849,8 @@ def project_files(project_map, tool):
     """
     globs = tool.get("project_globs") or []
     if not globs:
-        return []
-    out, seen = [], set()
+        return [], 0
+    out, seen, eligible = [], set(), 0
     for entry in (project_map or {}).values():
         if not isinstance(entry, dict):
             continue
@@ -866,12 +866,13 @@ def project_files(project_map, tool):
         base = Path(d)
         if not base.is_dir():
             continue
+        eligible += 1
         for pat in globs:
             for f in sorted(base.glob(pat)):
                 if f.is_file() and f not in seen:
                     seen.add(f)
                     out.append((f, base, name))
-    return out
+    return out, eligible
 
 
 def main():
@@ -920,7 +921,7 @@ def main():
         # Instruction files at verified project roots. Listed separately because
         # they are outside the tool root entirely, and a person reading the
         # report should see that this stage reached into their working trees.
-        proj = project_files(project_map, tool)
+        proj, proj_roots = project_files(project_map, tool)
 
         if args.dry_run:
             sources.append({
@@ -990,6 +991,11 @@ def main():
             "counts": {"found": len(files) + len(proj),
                        "changed": changed + proj_changed, "unchanged": unchanged},
             "project_files": len(proj),
+            # Eligible roots vs files found are different diagnoses: no
+            # roots means no path was supplied at confirmation time, while
+            # roots with no files means the projects simply have no
+            # instruction file. Reporting only the second conflates them.
+            "project_roots": proj_roots,
             "errors": errors,
         })
 
