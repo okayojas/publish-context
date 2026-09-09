@@ -203,6 +203,22 @@ Codex, Copilot, Windsurf, OpenCode and the shared `AGENTS.md` convention are
 written from first-party documentation and have never been exercised against an
 actual install. Cursor is unreachable by design — its memory is server-side.
 
+If you use any of those, your run is the first test of that entry — and the
+report tells you which way it went. A store that resolves but reads nothing
+prints what markdown *is* there that the globs missed:
+
+```
+  ● OpenAI Codex CLI            0 files,   0 changed  [default_root]
+      ↳ 2 markdown file(s) here that the globs did not match:
+          notes.md
+          prompts/review.md
+      that is a manifest gap, not an empty store — worth reporting
+```
+
+No such line means the store is genuinely empty and nothing is wrong. If you do
+see one, the fix is usually a glob in `reference/manifest.json` — open an issue
+with those paths and it is a six-line data change.
+
 **Publication is not built.** `submit.py` will refuse a report-only payload and
 exit if `ARIONIX_ENDPOINT` is unset, which it is for everyone. Stages 1–4 are
 complete and useful on their own; stage 5 is waiting on the ingress.

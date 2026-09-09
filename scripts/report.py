@@ -117,6 +117,20 @@ def main():
         for e in s.get("errors", [])[:3]:
             print(f"      \033[33m! {Path(e['path']).name}: {e['error']}\033[0m")
 
+        # A resolved store that read nothing is ambiguous — empty tool, or globs
+        # aimed at the wrong place. Six manifest entries have never met a real
+        # install, so this is how a stranger's run tells us which.
+        um = s.get("unmatched_markdown") or []
+        if um:
+            extra = s.get("unmatched_markdown_extra", 0)
+            more = f" (+{extra} more)" if extra else ""
+            print(f"      \033[33m↳ {len(um) + extra} markdown file(s) here that "
+                  f"the globs did not match{more}:\033[0m")
+            for rel in um:
+                print(f"          \033[2m{rel}\033[0m")
+            print(f"      \033[2mthat is a manifest gap, not an empty store — "
+                  f"worth reporting\033[0m")
+
     if not total:
         print("\n  No changed records. Nothing to report.\n")
         return 0

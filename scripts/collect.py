@@ -838,6 +838,46 @@ def git_tracked(path, repo):
         return None
 
 
+# Directories not worth counting markdown in.
+_NOISE = {"node_modules", "__pycache__", ".venv", "venv", "dist", "build",
+          "site-packages", ".git", "target", ".next", ".cache"}
+
+
+def unmatched_markdown(root, matched, limit=6, max_depth=4):
+    """Markdown under a store root that the globs did NOT match.
+
+    A store that resolves and yields nothing is ambiguous: the tool may simply
+    have no memory yet, or the manifest globs may be pointed at the wrong place.
+    Six of the eight manifest entries have never met a real install, so that
+    ambiguity is the main risk in handing this to someone else — they cannot
+    tell a correct zero from a bug, and neither can we.
+
+    Counting what is actually there resolves it. Files under the root but
+    outside the globs are a manifest gap with evidence; none at all is a
+    genuinely empty store.
+    """
+    seen = {f.resolve() for f in matched}
+    out, extra = [], 0
+    stack = [(Path(root), 0)]
+    while stack:
+        d, depth = stack.pop()
+        try:
+            for child in sorted(d.iterdir()):
+                if child.is_dir():
+                    if depth < max_depth and child.name not in _NOISE:
+                        stack.append((child, depth + 1))
+                elif child.suffix.lower() in (".md", ".markdown", ".mdc"):
+                    if child.resolve() in seen:
+                        continue
+                    if len(out) < limit:
+                        out.append(_posix(child.relative_to(root)))
+                    else:
+                        extra += 1
+        except (PermissionError, OSError):
+            continue
+    return out, extra
+
+
 def project_files(project_map, tool):
     """[(file, project_dir, scope_name)] for instruction files at project roots.
 
@@ -983,9 +1023,16 @@ def main():
                     set_aside.append({"tool": tool["tool"], "path": str(p),
                                       "reason": "unreviewed_candidate_patch"})
 
+        # Only when the store produced nothing — otherwise it is noise.
+        unmatched, unmatched_extra = ([], 0)
+        if not files and not proj:
+            unmatched, unmatched_extra = unmatched_markdown(root, files)
+
         sources.append({
             "tool": tool["tool"], "display": tool["display"],
             "status": "ok" if not errors else "partial",
+            "unmatched_markdown": unmatched,
+            "unmatched_markdown_extra": unmatched_extra,
             "resolved_root": str(root), "resolution": how,
             "documented": tool.get("documented", True),
             "counts": {"found": len(files) + len(proj),
