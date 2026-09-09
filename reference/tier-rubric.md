@@ -1,6 +1,6 @@
 # Classification rubric
 
-Rubric version **10**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
+Rubric version **11**. Bump `generator.version` in the payload when this file changes, so a batch of bad classifications is attributable to a rubric version rather than untraceable across installs.
 
 You are classifying **one candidate at a time** from `candidates.json`. Each already carries its authorship, activation, timestamp and refs — those are extracted, not judged. Your job is three fields: `kind`, `tier`, `target`.
 
@@ -338,7 +338,26 @@ Grade the evidence you're working from — the collector already did most of it:
 
 A ticket or ADR id is the most *resolvable* thing available, because it is already canonical in a connected system. Prefer it when present.
 
-If a required scope has no usable evidence, **ask** — batch the question per the last section. Don't fall back to a body mention and don't fall back to the path.
+**Resolve it here — do not defer it.** You are the one step with everything
+needed: the full body of every record, every sibling claim you just wrote, and
+the refs the collector extracted. Work the four sources above in order and
+attach what you find. Emitting a scope-requiring kind with `claimed_scope: []`
+does not postpone the question, it fails validation — and the information that
+would have answered it was in front of you.
+
+Three honest outcomes when the evidence runs out, in preference order:
+
+1. **A broader rung.** If the claim is about a shared mechanism, say so —
+   `portfolio` with the portfolio named, or `enterprise` with nothing named.
+   Most claims that look unscopeable are really broad rather than unknown.
+2. **Reclassify.** A prohibition with no subject and no rationale is often a
+   `preference` about how the publisher works, which requires no scope. Check
+   whether you picked the wrong kind before you decide the scope is missing.
+3. **Ask, once, batched.** Only for what survives 1 and 2. Collect the
+   questions and put them in one message rather than dropping the claims.
+
+Never fall back to a body mention, and never fall back to the source path
+without deciding it is right.
 
 **`sharing`** — default `personal`. Propose `team` only when the content is plainly about shared work and the person confirms it. Never default to `org`.
 
@@ -355,7 +374,8 @@ If a required scope has no usable evidence, **ask** — batch the question per t
 | `sharing` | `personal` |
 | `origin` | `unknown` |
 | `still_true` | `unknown` |
-| `claimed_scope` when ambiguous | omit the entry, or ask — never guess |
+| `claimed_scope` when ambiguous | work the evidence order, then a broader rung — never guess a name |
+| `scope_breadth` when unsure | the narrower rung; widening is a smaller error than over-claiming |
 
 **Never touch `authority`.** It is set by the collector from the file's location using one of four rules. A model judging that text "reads as model-written" is exactly the inference this design refuses. If a record's authority looks wrong, the manifest entry is wrong — fix the data, not the record.
 

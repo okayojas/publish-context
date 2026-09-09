@@ -221,11 +221,24 @@ python3 scripts/report.py --classified ~/.arionix/classified.json
 run still validates the classification, so a rubric mistake surfaces here rather
 than at publication time.
 
-## Step 3.5 — Resolve scopes (only if step 4 blocks on them)
+## Step 3.5 — Resolve scopes (the residue only)
+
+Step 3 should have done this. You have the full bodies, every sibling claim, and
+the extracted refs, so a scope-requiring claim leaving step 3 with an empty
+`claimed_scope` is work deferred onto a script that knows less than you did.
+
+This is for what genuinely survives that — an ambiguous target, or a
+classification someone else wrote.
 
 ```bash
-python3 scripts/resolve-scopes.py
+python3 scripts/resolve-scopes.py --auto     # attach what is not a guess
+python3 scripts/resolve-scopes.py            # then decide the rest
 ```
+
+`--auto` attaches only the strongest evidence tier: a target the claim's **own
+statement names** which another claim in the batch already uses, inheriting that
+claim's rung. That is verification rather than inference, so it needs no
+confirmation. Everything else it leaves alone and reports.
 
 `constraint`, `rejected_alternative`, `authority` and `vocabulary` need a
 target, and the classifier frequently cannot supply one — it sees a claim and

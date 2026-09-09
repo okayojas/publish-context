@@ -134,6 +134,10 @@ def main():
     ap.add_argument("--candidates",
                     default=str(Path.home() / ".arionix" / "candidates.json"))
     ap.add_argument("--no-interactive", action="store_true")
+    ap.add_argument("--auto", action="store_true",
+                    help="attach only the one tier that is not a guess — a target "
+                         "the claim's own statement names and another claim in the "
+                         "batch already uses — then report the rest")
     args = ap.parse_args()
 
     doc = read_json(args.classified, "classified file",
@@ -154,6 +158,50 @@ def main():
         print("Every scope-requiring claim already has a target. Nothing to do.")
         return 0
 
+    # The strongest evidence tier the rubric recognises: the author named the
+    # target while making the claim, and another claim in the batch confirms the
+    # spelling and the rung. That is verification, not inference, so it is the
+    # only thing safe to attach without asking. Everything else asks.
+    if args.auto:
+        did = []
+        for i, cl, src in list(pending):
+            stmt = (cl.get("statement") or "").lower()
+            best = None
+            for other in claims:
+                if other is cl:
+                    continue
+                for s in other.get("claimed_scope") or []:
+                    name = s.get("text") or ""
+                    if len(name) >= 4 and name.lower() in stmt:
+                        if best is None or len(name) > len(best[0]):
+                            best = (name, s.get("guess_kind", "unknown"),
+                                    other.get("scope_breadth"))
+            if not best:
+                continue
+            name, kind, rung = best
+            cl["claimed_scope"] = [{"text": name, "guess_kind": kind,
+                                    "evidence": "named_in_statement"}]
+            if rung:
+                cl["scope_breadth"] = rung
+            did.append((i, name, rung))
+            pending.remove((i, cl, src))
+
+        if did:
+            print(f"attached {len(did)} scope(s) the statements name themselves:")
+            for i, name, rung in did:
+                print(f"  [{i}] {name}" + (f"  ({rung})" if rung else ""))
+            sys.stdout.flush()          # the listing below goes to stderr
+            Path(args.classified).write_text(
+                json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")
+        else:
+            print("nothing could be attached without asking.")
+            sys.stdout.flush()
+        if not pending:
+            print("\nAll scope-requiring claims now have a target.")
+            return 0
+        print(f"\n{len(pending)} still need a decision.\n")
+        sys.stdout.flush()
+
     interactive = (not args.no_interactive
                    and sys.stdin.isatty() and sys.stdout.isatty())
     if not interactive:
@@ -164,9 +212,11 @@ def main():
             print(f"  [{i}] {cl.get('kind')}  {(cl.get('statement') or '')[:60]}",
                   file=sys.stderr)
             print(f"       written in: {proj}", file=sys.stderr)
-        print("\nRe-run with a terminal, or edit the file: give each a "
-              "`claimed_scope`\nentry, or `scope_breadth: \"platform_wide\"` with a "
-              "rationale.", file=sys.stderr)
+        print("\nRe-run with a terminal to be asked, or edit the file: give "
+              "each a\n`claimed_scope` entry naming the target plus a "
+              "`scope_breadth` of application,\napplication_group or "
+              "portfolio — or `scope_breadth: \"enterprise\"` with a "
+              "rationale and no target.", file=sys.stderr)
         return 1
 
     print(f"\n{len(pending)} claim(s) need a target before they can publish.")

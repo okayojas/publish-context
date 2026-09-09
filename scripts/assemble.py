@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REF = HERE.parent / "reference"
 SCHEMA_VERSION = "0.3"
-RUBRIC_VERSION = 10
+RUBRIC_VERSION = 11
 
 KINDS = ["rejected_alternative", "constraint", "authority", "preference",
          "playbook", "vocabulary", "external_reference"]
