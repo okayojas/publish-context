@@ -157,16 +157,17 @@ hold a `CLAUDE.md` are indexed and matched by name. Where two match it lists
 both and takes neither, because guessing between them is the one thing worth
 refusing.
 
-Scopes work the same way, and remember. Run this once per machine:
+Scopes work the same way, and remember. If your work lives in one GitHub
+organization, you can pre-fill the vocabulary from it — optional, and skippable:
 
 ```bash
 python3 scripts/seed-vocabulary.py --org YOUR-ORG
 ```
 
-Your GitHub organization is a registry of real applications, so the common
-level becomes something you pick rather than type. A name that isn't in the
-vocabulary is warned about, not refused — an application group legitimately
-isn't a repository.
+Where a scope *is* a repository, picking beats typing. That is the whole
+benefit. A name missing from the vocabulary is **not** a wrong name — a real
+scope is absent for plenty of ordinary reasons, including being a package inside
+a monorepo or not being a repository at all.
 
 Whether `arionix-platform` is a portfolio or an application group is org
 structure that no laptop can derive, so it is asked once and written to
@@ -220,7 +221,7 @@ the frontmatter *key names* differ, so every tool-specific fact lives in data:
 | `collect.py` | Resolve → enumerate → diff → parse → tag |
 | `resolve-projects.py` | Match encoded project paths to real directories, by re-encoding |
 | `resolve-scopes.py` | Ask what a scope-requiring claim applies to, one keystroke each |
-| `seed-vocabulary.py` | Seed real application names from a GitHub org, so scopes are picked not typed |
+| `seed-vocabulary.py` | Optionally pre-fill scope names from a GitHub org |
 | `report.py` | Report-only rendering |
 | `assemble.py` | Envelope, digest, local validation |
 | `submit.py` | Submit, then state and id write-back *(no endpoint yet)* |

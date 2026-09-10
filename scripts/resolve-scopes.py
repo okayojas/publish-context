@@ -171,7 +171,10 @@ def gather_candidates(claim, src, all_claims, by_hash, vocab=None):
         # statement spells out is evidence; a name that shares a common word
         # with it is noise.
         if name.lower() in stmt:
-            src_note = ("a real repository" if e.get("verified")
+            # what is known is where the name came from, not that it is right
+            src = e.get("source", "")
+            src_note = (f"a repository in {src.split(':', 1)[1]}"
+                        if src.startswith("github:")
                         else f"named before, used {e.get('uses', 1)}×")
             add(name, e.get("guess_kind", "unknown"), src_note)
 
@@ -182,9 +185,13 @@ def vocabulary_menu(vocab):
     """Every known scope, for when the shortlist misses."""
     rows = sorted((vocab or {}).items(),
                   key=lambda kv: (kv[1].get("scope_breadth") or "zz", kv[0]))
+    def why(e):
+        src = e.get("source", "")
+        if src.startswith("github:"):
+            return f"repo in {src.split(':', 1)[1]}"
+        return f"used {e.get('uses', 1)}×"
     return [{"text": n, "guess_kind": e.get("guess_kind", "unknown"),
-             "why": ("a real repository" if e.get("verified")
-                     else f"used {e.get('uses', 1)}×")} for n, e in rows]
+             "why": why(e)} for n, e in rows]
 
 
 def main():
@@ -395,25 +402,24 @@ def main():
                     target = input("     name  > ").strip()
                     if not target:
                         continue
-                    # An invented name leaves the machine unresolved and becomes
-                    # a new entity in the graph rather than an error. Two scopes
-                    # supplied by hand for a real batch did not exist anywhere in
-                    # the organization. Say so; do not refuse, because an
-                    # application group legitimately is not a repository.
+                    # Absence from the vocabulary is NOT evidence the name is
+                    # wrong. The vocabulary holds what has been seeded or named
+                    # before, and a real scope can be missing from it for many
+                    # ordinary reasons — a package inside a monorepo, a service
+                    # that is not its own repository, a deleted or renamed repo,
+                    # an application group, a portfolio, or simply an
+                    # organization nobody seeded. So this offers near-misses in
+                    # case of a typo and gets out of the way.
                     if vocab and target not in vocab:
                         near = [k for k in vocab
                                 if target.lower() in k.lower()
                                 or k.lower() in target.lower()][:4]
-                        print(f"     \033[33m{target!r} is not a known scope"
-                              f"\033[0m")
+                        print(f"     \033[2m{target!r} is not in the vocabulary "
+                              f"yet — that is common and fine.\033[0m")
                         if near:
-                            print(f"     \033[2mclose: {', '.join(near)}\033[0m")
-                        print(f"     \033[2mfine for an application group or a "
-                              f"portfolio — those are not repositories.\n"
-                              f"     If you meant an application, check the "
-                              f"spelling: it will publish\n     unresolved either "
-                              f"way.\033[0m")
-                        if input("     use it anyway?  [enter = yes · n = no] > "
+                            print(f"     \033[2msimilar names already known: "
+                                  f"{', '.join(near)}\033[0m")
+                        if input("     use it?  [enter = yes · n = pick again] > "
                                  ).strip().lower() in ("n", "no"):
                             continue
                 elif ans.isdigit() and 1 <= int(ans) <= len(cands):

@@ -283,22 +283,24 @@ project would be wrong for exactly the broad claims that matter most.
 `batch_reference`, `source_project` or `asked_and_confirmed` — so review
 downstream can tell an inherited scope from a stated one.
 
-**Seed the vocabulary from the organization first, once per machine:**
+**Optionally** pre-fill the vocabulary from a GitHub organization, once per
+machine:
 
 ```bash
-python3 scripts/seed-vocabulary.py --org Arionix-Inc
+python3 scripts/seed-vocabulary.py --org YOUR-ORG
 ```
 
-A GitHub organization is a registry of real applications, so this turns the
-`application` rung from a name someone types into a name they pick. It matters:
-two scopes supplied by hand for a real batch — `arionix-weight-core` and
-`weight-engine-service` — did not exist anywhere in the organization. They were
-read off memory-record prose, which names modules and intentions as readily as
-repositories, and publishing them would have created two unresolvable entities
-with citations attached.
+Where a scope *is* a repository, picking the name beats typing it. That is the
+whole benefit — it is a convenience, not a source of truth, and most people
+running this skill will skip it. Many work across several organizations, or name
+scopes that are not repositories at all.
 
-Typing a name that isn't in the vocabulary is warned about, not refused — an
-application group is legitimately not a repository.
+**A name missing from the vocabulary is not a wrong name.** A real scope is
+absent for many ordinary reasons: a package inside a monorepo, a service that is
+not its own repository, a repo since renamed, an application group, a portfolio,
+or simply an organization nobody seeded. `gh repo list` answers "no repository
+has that name" — a much narrower claim than "no such thing" — so the resolver
+offers near-misses in case of a typo and gets out of the way.
 
 **Rungs are remembered.** Whether `arionix-platform` is a portfolio or an
 application group is org structure, and nothing on a laptop can derive it — so

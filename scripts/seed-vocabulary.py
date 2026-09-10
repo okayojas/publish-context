@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Seed the scope vocabulary from a source of truth, so scopes are picked not typed.
+Optionally pre-fill the scope vocabulary from a GitHub organization.
 
-The vocabulary started as a memory of what a person had typed before, which
-removed the friction of re-answering but not the risk of answering wrongly. Two
-scopes supplied by hand for a real batch — `arionix-weight-core` and
-`weight-engine-service` — turned out not to exist anywhere in the organization.
-They were read off memory-record prose, which names modules and intentions as
-readily as it names repositories. Publishing them would have created two
-unresolvable entities in the graph, each with a citation attached.
+Entirely optional, and not a source of truth. Most people running this skill
+will not have an organization worth seeding from, or will work across several,
+or will name scopes that are not repositories at all — so the vocabulary stays
+a convenience for the common case and never becomes a gate.
 
-A GitHub organization is a registry of real applications, and reading it is a
-read-only call any member can make. So: seed from there, and the common rung —
-`application` — becomes something you pick from things that exist.
+What it is good for: where a scope *is* a repository, picking the name beats
+typing it, and the near-miss list catches a transposition. What it must not be
+read as: evidence about names it does not contain. A real scope is missing from
+a seeded vocabulary for many ordinary reasons — a package inside a monorepo, a
+service that is not its own repository, a repo since deleted or renamed, an
+application group, a portfolio. `gh repo list` answers "no repository has that
+name", which is a much narrower claim than "no such thing exists", and the
+resolver treats it that way.
 
-The two middle rungs cannot come from this. Nothing in GitHub says which
-application group `weight-config-api` belongs to, or what portfolios exist; that
-is org structure and it stays human-supplied. This fixes the rung where most
-claims land, not all of them.
+The two middle rungs cannot come from here at all. Nothing in GitHub says which
+application group a repository belongs to, or what portfolios exist; that is org
+structure and it stays human-supplied.
 
     python3 seed-vocabulary.py --org ORG [--vocabulary PATH] [--dry-run]
 
@@ -32,13 +33,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Repositories that are plainly not applications. Named rather than guessed at,
-# because a wrong exclusion here silently removes a real scope from the list a
-# person picks from.
-NOT_APPLICATIONS = {
-    "iac-terraform", "helm-charts", "opa-policies", "github-runner-image",
-    "env-fixture", "demo-repository", "test-bed", "architecture",
-}
+# Nothing is filtered. An earlier version skipped repositories whose names
+# looked like infrastructure — and the list was one organization's actual repo
+# names, which is precisely the assumption this script must not carry. Deciding
+# what counts as an application from a repository name is a guess, and a wrong
+# one silently removes a real scope from the list a person picks from. The
+# resolver already shortlists by what a claim actually names, so a larger
+# vocabulary costs nothing.
 
 
 def gh_repos(org):
@@ -81,8 +82,6 @@ def main():
                     default=str(Path.home() / ".arionix" / "scope-vocabulary.json"))
     ap.add_argument("--dry-run", action="store_true",
                     help="list what would be added, write nothing")
-    ap.add_argument("--include-infra", action="store_true",
-                    help="also add repositories that look like infrastructure")
     args = ap.parse_args()
 
     path = Path(args.vocabulary)
@@ -94,11 +93,8 @@ def main():
             vocab = {}
 
     repos = gh_repos(args.org)
-    added, kept, skipped = [], [], []
+    added, kept = [], []
     for name, desc, vis in sorted(repos):
-        if not args.include_infra and name.lower() in NOT_APPLICATIONS:
-            skipped.append(name)
-            continue
         if name in vocab:
             # Never overwrite. A rung someone assigned by hand carries more
             # information than the assumption that a repository is one
@@ -109,25 +105,23 @@ def main():
             "guess_kind": "repository",
             "scope_breadth": "application",
             "uses": 0,
+            # `source` says where the name came from, which is all that is
+            # known. An earlier version wrote `verified: true`, which read as a
+            # claim about the scope rather than about the lookup.
             "source": f"github:{args.org}",
-            "verified": True,
             **({"description": desc[:120]} if desc else {}),
         }
         added.append(name)
 
     print(f"{args.org}: {len(repos)} repositor{'y' if len(repos) == 1 else 'ies'} "
           f"visible")
-    print(f"  {len(added)} added   {len(kept)} already known   "
-          f"{len(skipped)} skipped as infrastructure")
+    print(f"  {len(added)} added   {len(kept)} already known")
     if added:
         print()
         for n in added[:40]:
             print(f"    + {n}")
         if len(added) > 40:
             print(f"    … and {len(added) - 40} more")
-    if skipped:
-        print(f"\n  \033[2mskipped: {', '.join(skipped)}"
-              f"\033[0m\n  \033[2m--include-infra adds them anyway\033[0m")
 
     if args.dry_run:
         print("\ndry run — nothing written")
@@ -137,10 +131,11 @@ def main():
     path.write_text(json.dumps(vocab, indent=2, sort_keys=True,
                                ensure_ascii=False), encoding="utf-8")
     print(f"\nwrote {path}  ({len(vocab)} scope(s))")
-    print("\n\033[2mEvery repository is seeded at `application` level. Application "
-          "groups and\nportfolios are org structure that GitHub does not carry — "
-          "name those as they\ncome up and they will be remembered alongside "
-          "these.\033[0m")
+    print("\n\033[2mEvery repository is seeded at `application` level, which is a "
+          "convention,\nnot a fact — correct any of them when it comes up and the "
+          "correction sticks.\nApplication groups and portfolios are org structure "
+          "GitHub does not carry, so\nname those as you go. A scope missing from "
+          "this list is not a wrong scope.\033[0m")
     return 0
 
 
