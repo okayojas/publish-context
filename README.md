@@ -21,7 +21,8 @@ equivalents for six other tools. Locations come from `reference/manifest.json`;
 nothing is discovered by sweeping your home directory.
 
 **It writes** to `~/.arionix/` only: `candidates.json` (what it read),
-`project-map.json` (your confirmed project names), `publish-state.json`. Your
+`project-map.json` (your confirmed project names), `scope-vocabulary.json` (the
+scopes you have named and what level each sits on), `publish-state.json`. Your
 memory files are never modified — the one exception is writing an `arionix_id`
 into frontmatter *after* a successful publication, which cannot happen yet.
 

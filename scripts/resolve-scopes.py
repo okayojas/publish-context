@@ -62,13 +62,48 @@ def candidate_project(src):
     return None
 
 
+def load_vocabulary(path):
+    """Scopes this machine has named before, and what rung each sits on.
+
+    The rung is the one thing nothing on a laptop can determine: whether
+    `arionix-platform` is a portfolio or an application group is org structure,
+    which lives in the graph. So it gets asked once and remembered, rather than
+    asked every run — and remembering is also what makes "every option
+    available" true rather than aspirational, since a scope named in one batch
+    is offered in the next.
+
+    When the publication endpoint exists this file becomes a cache of what the
+    graph already knows. Until then it is the only vocabulary there is.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def remember(vocab, name, kind, breadth, path):
+    entry = vocab.setdefault(name, {})
+    entry["guess_kind"] = kind or entry.get("guess_kind", "unknown")
+    if breadth:
+        entry["scope_breadth"] = breadth
+    entry["uses"] = entry.get("uses", 0) + 1
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(vocab, indent=2, sort_keys=True,
+                                   ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass          # a vocabulary that cannot be saved is still usable now
+
+
 def _kind_for(level):
     """A level implies what the named thing is, when nothing better is known."""
     return {"application": "application", "application_group": "application_group",
             "portfolio": "portfolio", "enterprise": "unknown"}.get(level, "unknown")
 
 
-def gather_candidates(claim, src, all_claims, by_hash):
+def gather_candidates(claim, src, all_claims, by_hash, vocab=None):
     """Everything in the batch that could plausibly be this claim's target.
 
     The first version of this offered one option — the project the record was
@@ -124,6 +159,15 @@ def gather_candidates(claim, src, all_claims, by_hash):
     for name, kind in sorted(vocabulary.items()):
         add(name, kind, "used elsewhere in this batch")
 
+    # 6. every scope this machine has ever named, so the full set is on offer
+    #    rather than only what this batch happens to mention
+    for name, e in sorted((vocab or {}).items(),
+                          key=lambda kv: -kv[1].get("uses", 0)):
+        # the rung is printed from the vocabulary in a column of its own, so
+        # repeating it here just doubled it on screen
+        add(name, e.get("guess_kind", "unknown"),
+            f"named before, used {e.get('uses', 1)}×")
+
     return out
 
 
@@ -134,6 +178,9 @@ def main():
     ap.add_argument("--candidates",
                     default=str(Path.home() / ".arionix" / "candidates.json"))
     ap.add_argument("--no-interactive", action="store_true")
+    ap.add_argument("--vocabulary",
+                    default=str(Path.home() / ".arionix" / "scope-vocabulary.json"),
+                    help="scopes named before, and the rung each sits on")
     ap.add_argument("--auto", action="store_true",
                     help="attach only the one tier that is not a guess — a target "
                          "the claim's own statement names and another claim in the "
@@ -146,6 +193,8 @@ def main():
                       "Run the collector first:\n    python3 scripts/collect.py --all")
 
     claims = doc["candidates"] if isinstance(doc, dict) else doc
+    vocab_path = Path(args.vocabulary)
+    vocab = load_vocabulary(vocab_path)
     by_hash = {c["content_hash"]: c for c in inter["candidates"]}
 
     pending = []
@@ -231,15 +280,17 @@ def main():
     for n, (i, cl, src) in enumerate(pending, start=1):
         stmt = (cl.get("statement") or "").strip()
         where = Path(src["source_path"]).name if src else "?"
-        cands = gather_candidates(cl, src, claims, by_hash)
+        cands = gather_candidates(cl, src, claims, by_hash, vocab)
 
         print(f"\n  \033[1m{n}/{len(pending)}\033[0m  {cl.get('kind')}"
               f"  \033[2m· tier {cl.get('tier')} · from {where}\033[0m")
         print(f"  {stmt[:160]}")
         print()
-        for j, c in enumerate(cands[:6], start=1):
-            print(f"       \033[1m{j}\033[0m  {c['text']:<30} \033[2m{c['why']}"
-                  f"\033[0m")
+        for j, c in enumerate(cands, start=1):
+            known = (vocab.get(c["text"]) or {}).get("scope_breadth")
+            rung = f"  \033[2m[{known}]\033[0m" if known else ""
+            print(f"       \033[1m{j:>2}\033[0m  {c['text']:<30}{rung}"
+                  f"  \033[2m{c['why']}\033[0m")
         if not cands:
             print("       \033[2mnothing in this batch names a plausible target"
                   "\033[0m")
@@ -250,8 +301,18 @@ def main():
               f"\033[2mstays blocked\033[0m")
 
         def ask_level(target):
-            """Which rung the named thing sits on. The point of the ladder is
-            that most claims are neither one app nor the whole company."""
+            """Which rung the named thing sits on.
+
+            Asked once per scope, ever. The rung is org structure and nothing on
+            this machine can derive it, so re-asking every run was pure friction
+            — and a person answering the same question twice will eventually
+            answer it differently.
+            """
+            known = (vocab.get(target) or {}).get("scope_breadth")
+            if known:
+                print(f"       \033[2m{target!r} is a {known.replace('_', ' ')} "
+                      f"(remembered)\033[0m")
+                return known
             print(f"       \033[2mwhat is {target!r}?\033[0m")
             for k, name in LEVELS[:3]:
                 print(f"         \033[1m{k}\033[0m  {name.replace('_', ' ')}")
@@ -299,7 +360,7 @@ def main():
                     target = input("     name  > ").strip()
                     if not target:
                         continue
-                elif ans.isdigit() and 1 <= int(ans) <= min(6, len(cands)):
+                elif ans.isdigit() and 1 <= int(ans) <= len(cands):
                     c = cands[int(ans) - 1]
                     target, kind = c["text"], c["guess_kind"]
                     evidence = ("source_project"
@@ -312,11 +373,12 @@ def main():
                 level = ask_level(target)
                 if not need_rationale(level):
                     continue
+                final_kind = kind if kind != "unknown" else _kind_for(level)
                 cl["claimed_scope"] = [{"text": target,
-                                        "guess_kind": kind if kind != "unknown"
-                                        else _kind_for(level),
+                                        "guess_kind": final_kind,
                                         "evidence": evidence}]
                 cl["scope_breadth"] = level
+                remember(vocab, target, final_kind, level, vocab_path)
                 print(f"     \033[32mok\033[0m {target}  \033[2m({level})\033[0m")
                 changed += 1
                 break

@@ -272,9 +272,17 @@ suggestion is read off a path and the person can see whether it fits. Here the
 choice is a judgement about what the claim means, and inheriting the source
 project would be wrong for exactly the broad claims that matter most.
 
-`evidence` records which source answered — `batch_reference`, `source_project`
-or `asked_and_confirmed` — so review downstream can tell an inherited scope from
-a stated one.
+`evidence` records which source answered — `named_in_statement`,
+`batch_reference`, `source_project` or `asked_and_confirmed` — so review
+downstream can tell an inherited scope from a stated one.
+
+**Rungs are remembered.** Whether `arionix-platform` is a portfolio or an
+application group is org structure, and nothing on a laptop can derive it — so
+it is asked once and written to `~/.arionix/scope-vocabulary.json`. Every later
+run offers the full vocabulary with each rung already attached, so the same
+question is never asked twice and a scope named in one batch is available in the
+next. When the publication endpoint exists this file becomes a cache of what the
+graph already knows; until then it is the only vocabulary there is.
 
 ## Step 4 — Assemble and validate
 
