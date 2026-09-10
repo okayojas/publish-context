@@ -14,6 +14,13 @@ explicit consent and nothing they didn't see.
 report and stop. It is useful on its own and it is how the taxonomy gets
 validated before anything is submitted.
 
+**The interpreter differs by platform.** Commands below say `python3`; on Windows
+it is usually `python`. Check once with `python3 --version` and use whichever
+answers — do not report a missing interpreter as a broken skill.
+
+**Run from the skill directory.** Every path below is relative to it:
+`cd ~/.claude/skills/publish-context` first, or use absolute paths.
+
 ## The four rules this skill runs on
 
 1. **Never guess authorship.** `authority` comes from the file's location via one
@@ -349,6 +356,8 @@ missing row in `reference/alias-table.json` — propose the row, same confirmati
 | `reference/tier-rubric.md` | The classification rules. Read before step 3. |
 | `reference/payload.schema.json` | The contract, documented. |
 | `scripts/collect.py` | Resolve, enumerate, diff, parse, tag. |
+| `scripts/resolve-projects.py` | Match encoded project paths to real directories. |
+| `scripts/resolve-scopes.py` | Ask what a scope-requiring claim applies to. |
 | `scripts/report.py` | Report-only rendering. |
 | `scripts/assemble.py` | Envelope, digest, local validation. |
 | `scripts/submit.py` | Submit, then state and id write-back. |
@@ -359,4 +368,5 @@ No network access is needed for steps 1–4.
 ## Defaults when unsure
 
 Exclude rather than include · `sharing: personal` · `origin: unknown` ·
-`still_true: unknown` · omit an ambiguous scope entry rather than guessing it.
+`still_true: unknown` · for scope, work the evidence order then reach for a
+broader rung — never guess a name.

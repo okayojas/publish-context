@@ -57,71 +57,110 @@ without the content.
 git clone https://github.com/okayojas/publish-context.git ~/.claude/skills/publish-context
 ```
 
-That's it — user-scope skill, available in every project on the machine. No
-dependencies. Python 3.8 or newer; PyYAML is used if present and a built-in
-fallback parser handles the frontmatter subset these files actually use if not.
+Restart Claude Code, then `/publish-context` is available in every project on
+that machine.
 
-## Look before it reads anything
+No dependencies. Python 3.8 or newer; PyYAML is used if present and a built-in
+fallback parser handles the frontmatter subset these files actually use if not.
+On Windows the interpreter is usually `python` rather than `python3`.
+
+To update: `cd ~/.claude/skills/publish-context && git pull`.
+
+## Using it
+
+In Claude Code, on the machine whose memory you want to read:
+
+```
+/publish-context
+```
+
+That runs the whole pipeline and stops at a report. It submits nothing, and it
+tells you what it found rather than what it did. Ask for more by saying so:
+
+| Say | You get |
+|---|---|
+| `/publish-context` | collect, resolve, report — nothing else |
+| `/publish-context classify only` | plus the rubric pass: kind distribution and exclusion mix |
+| `/publish-context publish` | plus a confirmation table, then submission *(no endpoint yet — it will refuse)* |
+
+The skill asks you two kinds of question and nothing else. **Which project is
+this?** — when a memory directory is named after a filesystem path that has
+since moved. **What does this claim apply to?** — when a rule needs a target
+before it can mean anything. Both are single keystrokes, both remember your
+answers, and both are skippable.
+
+### Look before it reads anything
+
+If you would rather see the file list before a single file is opened:
 
 ```bash
 cd ~/.claude/skills/publish-context
 python3 scripts/collect.py --dry-run
 ```
 
-Resolves every store and lists the exact files it *would* open, without opening
-one. If a tool you use reports `not installed`, its root has probably been
-relocated — check the environment variable or settings key for it in
-`reference/manifest.json`. That's a data fix, not a code change.
+Resolves every store and lists exactly what it *would* read. If a tool you use
+reports `not installed`, its root has probably been relocated — check the
+environment variable or settings key for it in `reference/manifest.json`. That
+is a data fix, not a code change.
 
-## Run it
+### Running the stages by hand
+
+The skill runs these for you; they are here because a person debugging a machine
+should not have to go through a model to do it. On Windows use `python`.
 
 ```bash
-python3 scripts/collect.py --all
-python3 scripts/resolve-projects.py     # hold enter; see below
-python3 scripts/collect.py --all        # second pass reads your project files
-python3 scripts/report.py
+python3 scripts/collect.py --all          # read every store
+python3 scripts/resolve-projects.py       # name any moved project — hold enter
+python3 scripts/collect.py --all          # second pass reads your CLAUDE.md files
+python3 scripts/report.py                 # the eight measures
 ```
 
-The second `collect` is not redundant. `resolve-projects` is what turns an
-encoded project directory into a real project name, and that name is what lets
-the collector find your repos' `CLAUDE.md` files — the only human-authored
-memory it ever reaches.
+The second `collect` is not redundant: `resolve-projects` is what turns an
+encoded directory name into a real project name, and that name is what lets the
+collector find your repositories' `CLAUDE.md` — the only human-authored memory
+it ever reaches.
 
-### The confirmation step
+Classification needs a model, so it happens inside the skill. Afterwards:
 
-Some tools name their memory directory after the filesystem path, flattened:
+```bash
+python3 scripts/resolve-scopes.py --auto  # attach the scopes that are not guesses
+python3 scripts/resolve-scopes.py         # decide the rest
+python3 scripts/assemble.py --classified ~/.arionix/classified.json --mode report-only
+python3 scripts/report.py --classified ~/.arionix/classified.json
+```
+
+### The confirmation steps
+
+Some tools name a memory directory after the filesystem path, flattened:
 
 ```
 C:\Users\Ojas\Downloads\arionix-weight-poc
   ->  c--Users-Ojas-Downloads-arionix-weight-poc
 ```
 
-That can't be decoded — separators and real hyphens are the same character — but
-it can be *matched*, by re-encoding candidate directories and comparing. Where
-matching fails, usually because the folder was moved or deleted, it asks you:
+That cannot be decoded — separators and real hyphens are the same character —
+but it can be *matched*, by re-encoding candidate directories and comparing.
+Where matching fails, usually because the folder moved, it asks:
 
 ```
   1.  arionix-weight-poc             7 record(s)   relative to Downloads/
-  2.  CSE-112                        3 record(s)   relative to Documents/
 
 Which would you like to confirm?  enter = all  ·  1,3-5  ·  none
-
   1. arionix-weight-poc  (7 record(s))
      name  [enter to accept · s to skip] >
      found /Users/ojas/code/arionix-weight-poc  (CLAUDE.md)
      use it?  [enter = yes · n = no] >
-     ok arionix-weight-poc  + will read its instruction files
 ```
 
-**Holding enter is the intended path.** Blank confirms everything and accepts
-each suggested name and found path — every value is shown before it's taken, and
-a wrong name yields an unresolvable reference rather than a wrong one. You never
-type a path: directories that actually hold a `CLAUDE.md` are indexed and matched
-by name. Where two match, it lists both and takes neither unless you pick, because
-guessing between them is the one thing worth refusing.
+**Holding enter is the intended path.** You never type a path: directories that
+hold a `CLAUDE.md` are indexed and matched by name. Where two match it lists
+both and takes neither, because guessing between them is the one thing worth
+refusing.
 
-Then re-run `collect.py --all` and the report ends with what each project will
-contribute.
+Scopes work the same way, and remember. Whether `arionix-platform` is a
+portfolio or an application group is org structure that no laptop can derive, so
+it is asked once and written to `~/.arionix/scope-vocabulary.json`. Later runs
+offer the whole vocabulary with each level attached.
 
 ## What you get
 
