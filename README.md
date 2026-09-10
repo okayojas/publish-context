@@ -54,7 +54,7 @@ without the content.
 ## Install
 
 ```bash
-git clone https://github.com/okayojas/publish-context.git ~/.claude/skills/publish-context
+git clone https://github.com/Arionix-Inc/publish-context.git ~/.claude/skills/publish-context
 ```
 
 Restart Claude Code, then `/publish-context` is available in every project on
@@ -288,4 +288,5 @@ to train people to ignore the flag, which is worse than not flagging.
 
 ## License
 
-Not yet chosen. Ask before redistributing outside the organization.
+Internal Arionix work product. No open-source license — this repository is
+visible to organization members and is not for redistribution outside it.
