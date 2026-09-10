@@ -159,16 +159,32 @@ def gather_candidates(claim, src, all_claims, by_hash, vocab=None):
     for name, kind in sorted(vocabulary.items()):
         add(name, kind, "used elsewhere in this batch")
 
-    # 6. every scope this machine has ever named, so the full set is on offer
-    #    rather than only what this batch happens to mention
+    # 6. vocabulary entries the statement actually implicates. Seeding from a
+    #    GitHub org puts dozens of real applications in the vocabulary, and
+    #    printing all of them under every claim would bury the two or three that
+    #    matter. The rest stay one keystroke away behind `l`.
     for name, e in sorted((vocab or {}).items(),
-                          key=lambda kv: -kv[1].get("uses", 0)):
-        # the rung is printed from the vocabulary in a column of its own, so
-        # repeating it here just doubled it on screen
-        add(name, e.get("guess_kind", "unknown"),
-            f"named before, used {e.get('uses', 1)}×")
+                          key=lambda kv: (-kv[1].get("uses", 0), kv[0])):
+        # Full-name match only. Matching on tokens looked cleverer and was
+        # useless: "service" is seven characters and appears in nine repository
+        # names, so one statement shortlisted fourteen candidates. A name the
+        # statement spells out is evidence; a name that shares a common word
+        # with it is noise.
+        if name.lower() in stmt:
+            src_note = ("a real repository" if e.get("verified")
+                        else f"named before, used {e.get('uses', 1)}×")
+            add(name, e.get("guess_kind", "unknown"), src_note)
 
     return out
+
+
+def vocabulary_menu(vocab):
+    """Every known scope, for when the shortlist misses."""
+    rows = sorted((vocab or {}).items(),
+                  key=lambda kv: (kv[1].get("scope_breadth") or "zz", kv[0]))
+    return [{"text": n, "guess_kind": e.get("guess_kind", "unknown"),
+             "why": ("a real repository" if e.get("verified")
+                     else f"used {e.get('uses', 1)}×")} for n, e in rows]
 
 
 def main():
@@ -296,6 +312,8 @@ def main():
                   "\033[0m")
         print(f"       \033[1me\033[0m  enterprise                     "
               f"\033[2meverything; names no target\033[0m")
+        if vocab:
+            print(f"       \033[1ml\033[0m  list all {len(vocab)} known scope(s)")
         print(f"       \033[1mt\033[0m  type a name")
         print(f"       \033[1ms\033[0m  skip                           "
               f"\033[2mstays blocked\033[0m")
@@ -316,12 +334,15 @@ def main():
             print(f"       \033[2mwhat is {target!r}?\033[0m")
             for k, name in LEVELS[:3]:
                 print(f"         \033[1m{k}\033[0m  {name.replace('_', ' ')}")
+            print(f"         \033[1mb\033[0m  back \033[2m(wrong target)\033[0m")
             while True:
                 lv = input("       > ").strip().lower()
+                if lv in ("b", "back"):
+                    return None
                 for k, name in LEVELS[:3]:
                     if lv == k:
                         return name
-                print("       \033[2ma, g or f\033[0m")
+                print("       \033[2ma, g, f or b\033[0m")
 
         def need_rationale(level):
             if cl.get("tier") != 1 or level not in ("portfolio", "enterprise"):
@@ -356,10 +377,45 @@ def main():
                     break
 
                 target, kind, evidence = None, "unknown", "asked_and_confirmed"
+                if ans == "l":
+                    for j, c in enumerate(vocabulary_menu(vocab), start=1):
+                        rung = (vocab.get(c["text"]) or {}).get("scope_breadth", "")
+                        print(f"       \033[2m{j:>3}\033[0m  {c['text']:<30} "
+                              f"\033[2m{rung}\033[0m")
+                    pick = input("     which?  [number · enter to go back] > ").strip()
+                    menu = vocabulary_menu(vocab)
+                    if pick.isdigit() and 1 <= int(pick) <= len(menu):
+                        c = menu[int(pick) - 1]
+                        cands = cands + [c]
+                        ans = str(len(cands))
+                    else:
+                        continue
+
                 if ans == "t":
                     target = input("     name  > ").strip()
                     if not target:
                         continue
+                    # An invented name leaves the machine unresolved and becomes
+                    # a new entity in the graph rather than an error. Two scopes
+                    # supplied by hand for a real batch did not exist anywhere in
+                    # the organization. Say so; do not refuse, because an
+                    # application group legitimately is not a repository.
+                    if vocab and target not in vocab:
+                        near = [k for k in vocab
+                                if target.lower() in k.lower()
+                                or k.lower() in target.lower()][:4]
+                        print(f"     \033[33m{target!r} is not a known scope"
+                              f"\033[0m")
+                        if near:
+                            print(f"     \033[2mclose: {', '.join(near)}\033[0m")
+                        print(f"     \033[2mfine for an application group or a "
+                              f"portfolio — those are not repositories.\n"
+                              f"     If you meant an application, check the "
+                              f"spelling: it will publish\n     unresolved either "
+                              f"way.\033[0m")
+                        if input("     use it anyway?  [enter = yes · n = no] > "
+                                 ).strip().lower() in ("n", "no"):
+                            continue
                 elif ans.isdigit() and 1 <= int(ans) <= len(cands):
                     c = cands[int(ans) - 1]
                     target, kind = c["text"], c["guess_kind"]
@@ -367,10 +423,13 @@ def main():
                                 if c["why"].startswith("the project") else
                                 "batch_reference")
                 else:
-                    print("     \033[2ma number, e, t or s\033[0m")
+                    opts = "a number, e, t" + (", l" if vocab else "") + " or s"
+                    print(f"     \033[2m{opts}\033[0m")
                     continue
 
                 level = ask_level(target)
+                if level is None:
+                    continue          # backed out; re-offer the whole claim
                 if not need_rationale(level):
                     continue
                 final_kind = kind if kind != "unknown" else _kind_for(level)

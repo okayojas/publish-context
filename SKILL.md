@@ -283,6 +283,23 @@ project would be wrong for exactly the broad claims that matter most.
 `batch_reference`, `source_project` or `asked_and_confirmed` — so review
 downstream can tell an inherited scope from a stated one.
 
+**Seed the vocabulary from the organization first, once per machine:**
+
+```bash
+python3 scripts/seed-vocabulary.py --org Arionix-Inc
+```
+
+A GitHub organization is a registry of real applications, so this turns the
+`application` rung from a name someone types into a name they pick. It matters:
+two scopes supplied by hand for a real batch — `arionix-weight-core` and
+`weight-engine-service` — did not exist anywhere in the organization. They were
+read off memory-record prose, which names modules and intentions as readily as
+repositories, and publishing them would have created two unresolvable entities
+with citations attached.
+
+Typing a name that isn't in the vocabulary is warned about, not refused — an
+application group is legitimately not a repository.
+
 **Rungs are remembered.** Whether `arionix-platform` is a portfolio or an
 application group is org structure, and nothing on a laptop can derive it — so
 it is asked once and written to `~/.arionix/scope-vocabulary.json`. Every later
@@ -358,6 +375,7 @@ missing row in `reference/alias-table.json` — propose the row, same confirmati
 | `scripts/collect.py` | Resolve, enumerate, diff, parse, tag. |
 | `scripts/resolve-projects.py` | Match encoded project paths to real directories. |
 | `scripts/resolve-scopes.py` | Ask what a scope-requiring claim applies to. |
+| `scripts/seed-vocabulary.py` | Seed real application names from a GitHub org. |
 | `scripts/report.py` | Report-only rendering. |
 | `scripts/assemble.py` | Envelope, digest, local validation. |
 | `scripts/submit.py` | Submit, then state and id write-back. |
