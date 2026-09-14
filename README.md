@@ -215,6 +215,7 @@ the frontmatter *key names* differ, so every tool-specific fact lives in data:
 | `reference/alias-table.json` | Ten frontmatter spellings mapped to four meanings |
 | `reference/tier-rubric.md` | Classification rules, with worked examples from real stores |
 | `reference/payload.schema.json` | The publication contract |
+| `reference/technical-spec.md` | **How the code works** — read this instead of the source |
 
 | Script | Stage |
 |---|---|

@@ -374,6 +374,7 @@ missing row in `reference/alias-table.json` — propose the row, same confirmati
 | `reference/alias-table.json` | Ten frontmatter spellings → four meanings. |
 | `reference/tier-rubric.md` | The classification rules. Read before step 3. |
 | `reference/payload.schema.json` | The contract, documented. |
+| `reference/technical-spec.md` | How every stage works, and why. |
 | `scripts/collect.py` | Resolve, enumerate, diff, parse, tag. |
 | `scripts/resolve-projects.py` | Match encoded project paths to real directories. |
 | `scripts/resolve-scopes.py` | Ask what a scope-requiring claim applies to. |
